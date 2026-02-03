@@ -881,9 +881,9 @@
     msg.className = 'chat-msg chat-msg-' + role;
     msg.innerHTML =
       '<span class="chat-sender">' +
-      (role === 'operator' ? 'Blackout_Op' : 'You') +
+      escapeHtml(role === 'operator' ? 'Blackout_Op' : 'You') +
       '</span><span class="chat-time">' +
-      state.chatMessages[state.chatMessages.length - 1].time +
+      escapeHtml(state.chatMessages[state.chatMessages.length - 1].time) +
       '</span><div class="chat-text">' +
       escapeHtml(text) +
       '</div>';
@@ -903,9 +903,9 @@
     msg.className = 'ransom-site-chat-msg ransom-site-chat-msg-' + role;
     msg.innerHTML =
       '<span class="ransom-site-chat-sender">' +
-      (role === 'operator' ? 'Blackout_Op' : 'You') +
+      escapeHtml(role === 'operator' ? 'Blackout_Op' : 'You') +
       '</span><span class="ransom-site-chat-time">' +
-      state.chatMessages[state.chatMessages.length - 1].time +
+      escapeHtml(state.chatMessages[state.chatMessages.length - 1].time) +
       '</span><div class="ransom-site-chat-text">' +
       escapeHtml(text) +
       '</div>';
@@ -2165,9 +2165,9 @@
           msgEl.className = 'ransom-site-chat-msg ransom-site-chat-msg-' + msg.role;
           msgEl.innerHTML =
             '<span class="ransom-site-chat-sender">' +
-            (msg.role === 'operator' ? 'Blackout_Op' : 'You') +
+            escapeHtml(msg.role === 'operator' ? 'Blackout_Op' : 'You') +
             '</span><span class="ransom-site-chat-time">' +
-            msg.time +
+            escapeHtml(msg.time) +
             '</span><div class="ransom-site-chat-text">' +
             escapeHtml(msg.text) +
             '</div>';
