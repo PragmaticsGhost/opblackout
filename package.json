@@ -1,0 +1,13 @@
+{
+  "name": "ransomware-incident-response-game",
+  "version": "1.0.0",
+  "description": "CISA-aligned ransomware incident response game with puzzles and negotiation",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

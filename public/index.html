@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Operation Blackout — Ransomware Incident Response Game</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="login-screen" class="login-screen" aria-label="PC logon">
+    <div class="login-screen-backdrop"></div>
+    <div class="login-screen-card">
+      <div class="login-screen-icon" aria-hidden="true">👤</div>
+      <h1 class="login-screen-title">Sign in</h1>
+      <p class="login-screen-subtitle">Enter your username to continue. This name will be used for your session and for the leaderboard.</p>
+      <form id="login-form" class="login-form">
+        <label for="login-username">Username</label>
+        <input type="text" id="login-username" name="username" placeholder="Enter username" maxlength="50" required autocomplete="username" />
+        <button type="submit" class="login-btn">Sign in</button>
+      </form>
+    </div>
+  </div>
+  <div class="desktop" id="desktop-container">
+    <div class="desktop-wallpaper" aria-hidden="true"></div>
+
+    <div class="desktop-content">
+      <!-- Fake encrypted desktop files (decrypt after decryptor email link clicked) -->
+      <div id="desktop-fake-files" class="desktop-fake-files"></div>
+      <!-- README: file icon at start; click opens window (animated) -->
+      <button type="button" class="readme-icon" id="readme-icon" aria-label="Open README.txt">
+        <span class="readme-icon-symbol">📄</span>
+        <span class="readme-icon-label">README.txt</span>
+      </button>
+      <button type="button" class="wallet-icon" id="wallet-icon" aria-label="Open Bitmonster - BTC Wallet">
+        <span class="wallet-icon-symbol wallet-icon-app-icon">😈</span>
+        <span class="wallet-icon-label">Bitmonster - BTC Wallet</span>
+      </button>
+      <button type="button" class="tor-icon" id="tor-icon" aria-label="Open Tor Browser">
+        <span class="tor-icon-symbol tor-icon-app-icon">🧅</span>
+        <span class="tor-icon-label">Tor Browser</span>
+      </button>
+      <button type="button" class="bank-icon" id="bank-icon" aria-label="Open BNC Banking">
+        <span class="bank-icon-symbol bank-icon-app-icon">🏦</span>
+        <span class="bank-icon-label">BNC Banking</span>
+      </button>
+      <button type="button" class="bmail-icon" id="bmail-icon" aria-label="Open Bmail">
+        <span class="bmail-icon-symbol bmail-icon-app-icon">B</span>
+        <span class="bmail-icon-label">Bmail</span>
+      </button>
+      <!-- Window layer: all app windows float over the desktop (no layout shift) -->
+      <div class="desktop-windows" id="desktop-windows">
+      <div class="ransom-note-window" id="readme-window" aria-label="Ransom note - README" tabindex="0" hidden>
+        <div class="window-title-bar ransom-note-title">
+          <span class="window-title-icon">📄</span>
+          <span class="window-title-text">README.txt</span>
+          <button type="button" class="readme-window-close" id="readme-window-close" aria-label="Close">×</button>
+        </div>
+        <div class="ransom-note-content">
+          <h1 class="ransom-note-headline">Your files have been encrypted</h1>
+          <p class="ransom-note-intro">All your important files have been encrypted with military-grade encryption. You cannot access them without our decryption key.</p>
+          <p class="ransom-note-id"><strong>Personal ID:</strong> <code id="readme-personal-id">MRH-7f3a9b2e-4c1d</code> — include this in all contact.</p>
+          <section class="ransom-note-section">
+            <h2 class="ransom-note-section-title">How to recover your files</h2>
+            <ol class="ransom-note-steps">
+              <li>Send <strong>exactly 2.5 BTC</strong> to the Bitcoin address below within <strong>72 hours</strong>.</li>
+              <li>Open Tor Browser and visit: <a href="#" id="readme-onion-link" class="readme-onion-link">http://example.onion</a></li>
+              <li>Enter your Personal ID and payment proof. We will send the decryption tool after confirmation.</li>
+            </ol>
+          </section>
+          <section class="ransom-note-section ransom-note-address-block">
+            <h2 class="ransom-note-section-title">Bitcoin address — send payment here</h2>
+            <p class="ransom-note-address-label">Send exactly 2.5 BTC to:</p>
+            <p class="ransom-note-address"><span id="readme-btc-address">bc1q5h8k2m4n6p8q0r2s4t6v8w0x2y4z6a8b0c2d4e6f8g0h2j4k6</span></p>
+          </section>
+          <section class="ransom-note-section ransom-note-warning">
+            <h2 class="ransom-note-section-title">Warning</h2>
+            <ul class="ransom-note-warnings">
+              <li>Do not try to restore from backup—we may have encrypted those too.</li>
+              <li>Do not contact law enforcement or we will publish all stolen data immediately.</li>
+              <li>Your patient records and internal data have been exfiltrated. They will be leaked if you do not pay.</li>
+            </ul>
+          </section>
+          <p class="ransom-note-deadline">Midwest Regional Health — you have 72 hours.</p>
+        </div>
+      </div>
+      <div class="wallet-window" id="wallet-window" aria-label="Bitmonster - BTC Wallet" tabindex="0" hidden>
+        <div class="window-title-bar wallet-title">
+          <span class="window-title-icon wallet-title-app-icon">😈</span>
+          <span class="window-title-text">Bitmonster - BTC Wallet</span>
+          <button type="button" class="wallet-window-close" id="wallet-window-close" aria-label="Close">×</button>
+        </div>
+        <div class="wallet-body">
+          <div class="wallet-balance-block">
+            <span class="wallet-balance-label">Balance</span>
+            <span class="wallet-balance-amount" id="wallet-balance">0.00000000 BTC</span>
+          </div>
+          <div class="wallet-tabs" role="tablist">
+            <button type="button" class="wallet-tab active" data-tab="buy" role="tab" aria-selected="true">Buy Bitcoin</button>
+            <button type="button" class="wallet-tab" data-tab="send" role="tab" aria-selected="false">Send</button>
+          </div>
+          <div class="wallet-tab-panel" id="wallet-panel-buy" role="tabpanel">
+            <div class="wallet-price-hero">
+              <div class="wallet-price-asset">
+                <span class="wallet-price-icon">₿</span>
+                <span class="wallet-price-name">Bitcoin</span>
+                <span class="wallet-price-badge" id="wallet-price-badge">Live</span>
+              </div>
+              <div class="wallet-price-amount" id="wallet-price-display">$—</div>
+              <div class="wallet-price-meta" id="wallet-price-meta">1 BTC · Updating…</div>
+            </div>
+            <div class="wallet-chart-wrap">
+              <div class="wallet-chart-timeframes" role="tablist">
+                <button type="button" class="wallet-chart-tf active" data-range="6h">6H</button>
+                <button type="button" class="wallet-chart-tf" data-range="12h">12H</button>
+                <button type="button" class="wallet-chart-tf" data-range="24h">24H</button>
+                <button type="button" class="wallet-chart-tf" data-range="7d">7D</button>
+              </div>
+              <div class="wallet-chart-container">
+                <canvas id="wallet-btc-chart" class="wallet-btc-chart" width="380" height="140" aria-label="Bitcoin price chart"></canvas>
+              </div>
+            </div>
+            <div class="wallet-buy-form">
+              <div class="wallet-form-row">
+                <label for="wallet-buy-usd">You pay</label>
+                <div class="wallet-input-wrap">
+                  <span class="wallet-input-prefix">$</span>
+                  <input type="number" id="wallet-buy-usd" class="wallet-input wallet-input-amount" min="1" step="1" placeholder="0" value="">
+                </div>
+              </div>
+              <div class="wallet-form-row wallet-receive-row" id="wallet-btc-preview">
+                <label>You receive</label>
+                <div class="wallet-receive-value" id="wallet-btc-preview-value">— BTC</div>
+                <div class="wallet-receive-rate" id="wallet-btc-rate">1 BTC = $—</div>
+              </div>
+            </div>
+            <div class="wallet-divider">Payment method</div>
+            <div class="wallet-card-block">
+              <div class="wallet-form-row">
+                <label>Card</label>
+                <input type="text" id="wallet-card-number" class="wallet-input wallet-card-input" value="4242 4242 4242 4242" readonly>
+              </div>
+              <div class="wallet-form-row two-cols">
+                <div>
+                  <label>Expiry</label>
+                  <input type="text" id="wallet-card-expiry" class="wallet-input" value="12/28" readonly>
+                </div>
+                <div>
+                  <label>CVV</label>
+                  <input type="text" id="wallet-card-cvv" class="wallet-input" value="•••" readonly>
+                </div>
+              </div>
+              <p class="wallet-card-note">Training simulation — no real charges.</p>
+            </div>
+            <button type="button" class="wallet-btn wallet-btn-primary" id="wallet-buy-confirm">Buy Bitcoin</button>
+            <p class="wallet-status" id="wallet-buy-status" aria-live="polite"></p>
+          </div>
+          <div class="wallet-tab-panel hidden" id="wallet-panel-send" role="tabpanel">
+            <p class="wallet-panel-desc">Send Bitcoin to an address (e.g. to pay the ransom in this simulation).</p>
+            <div class="wallet-form-row">
+              <label for="wallet-send-amount">Amount (BTC)</label>
+              <input type="number" id="wallet-send-amount" class="wallet-input" min="0.00000001" step="0.01" placeholder="e.g. 2.5" value="">
+            </div>
+            <div class="wallet-form-row">
+              <label for="wallet-send-address">Recipient address</label>
+              <input type="text" id="wallet-send-address" class="wallet-input wallet-address-input" placeholder="bc1q...">
+            </div>
+            <button type="button" class="wallet-btn wallet-btn-link" id="wallet-send-paste-ransom">Use ransom address from README</button>
+            <button type="button" class="wallet-btn wallet-btn-primary" id="wallet-send-confirm">Send Bitcoin</button>
+            <p class="wallet-status" id="wallet-send-status" aria-live="polite"></p>
+          </div>
+        </div>
+      </div>
+      <div class="tor-window" id="tor-window" aria-label="Tor Browser" tabindex="0" hidden>
+        <div class="window-title-bar tor-title">
+          <span class="window-title-icon">🧅</span>
+          <span class="window-title-text">Tor Browser</span>
+          <button type="button" class="tor-window-close" id="tor-window-close" aria-label="Close">×</button>
+        </div>
+        <div class="tor-body">
+          <div class="tor-toolbar">
+            <button type="button" class="tor-nav-btn" id="tor-back" aria-label="Back" disabled>←</button>
+            <button type="button" class="tor-nav-btn" id="tor-forward" aria-label="Forward" disabled>→</button>
+            <button type="button" class="tor-nav-btn" id="tor-refresh" aria-label="Refresh">⟳</button>
+            <div class="tor-url-bar-wrap">
+              <input type="text" id="tor-url-bar" class="tor-url-bar" placeholder="Enter .onion address or search" />
+              <button type="button" class="tor-go-btn" id="tor-go-btn">Go</button>
+            </div>
+          </div>
+          <div class="tor-content" id="tor-content">
+            <div class="tor-start-page">
+              <div class="tor-logo">🧅</div>
+              <h2>Welcome to Tor Browser</h2>
+              <p>Your connection is secure and anonymous.</p>
+              <p class="tor-hint">Enter a .onion address in the URL bar above to access the dark web.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="bank-window" id="bank-window" aria-label="BNC Banking" tabindex="0" hidden>
+        <div class="window-title-bar bank-title">
+          <span class="window-title-icon bank-title-app-icon">🏦</span>
+          <span class="window-title-text">BNC Banking</span>
+          <button type="button" class="bank-window-close" id="bank-window-close" aria-label="Close">×</button>
+        </div>
+        <div class="bank-body">
+          <nav class="bank-nav" role="tablist">
+            <button type="button" class="bank-nav-item active" data-tab="balance" role="tab" aria-selected="true">Balance</button>
+            <button type="button" class="bank-nav-item" data-tab="transfer" role="tab" aria-selected="false">Transfer</button>
+            <button type="button" class="bank-nav-item" data-tab="billpay" role="tab" aria-selected="false">Pay Bills</button>
+            <button type="button" class="bank-nav-item" data-tab="history" role="tab" aria-selected="false">History</button>
+          </nav>
+          <div class="bank-panel bank-panel-balance" id="bank-panel-balance" role="tabpanel">
+            <div class="bank-account-block">
+              <span class="bank-account-label">Checking Account</span>
+              <span class="bank-account-number">•••• 4242</span>
+              <span class="bank-balance-label">Available balance</span>
+              <span class="bank-balance-amount" id="bank-balance">$7,500,000.00</span>
+            </div>
+            <div class="bank-account-block">
+              <span class="bank-account-label">Savings Account</span>
+              <span class="bank-account-number">•••• 8181</span>
+              <span class="bank-balance-label">Available balance</span>
+              <span class="bank-balance-amount" id="bank-savings-balance">$500,000.00</span>
+            </div>
+          </div>
+          <div class="bank-panel bank-panel-transfer hidden" id="bank-panel-transfer" role="tabpanel">
+            <p class="bank-panel-title">Transfer between accounts</p>
+            <div class="bank-form-row">
+              <label for="bank-transfer-from">From</label>
+              <select id="bank-transfer-from" class="bank-input">
+                <option value="checking">Checking (•••• 4242)</option>
+                <option value="savings">Savings (•••• 8181)</option>
+              </select>
+            </div>
+            <div class="bank-form-row">
+              <label for="bank-transfer-to">To</label>
+              <select id="bank-transfer-to" class="bank-input">
+                <option value="savings">Savings (•••• 8181)</option>
+                <option value="checking">Checking (•••• 4242)</option>
+              </select>
+            </div>
+            <div class="bank-form-row">
+              <label for="bank-transfer-amount">Amount ($)</label>
+              <input type="number" id="bank-transfer-amount" class="bank-input" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <button type="button" class="bank-btn bank-btn-primary" id="bank-transfer-submit">Transfer</button>
+            <p class="bank-status" id="bank-transfer-status" aria-live="polite"></p>
+          </div>
+          <div class="bank-panel bank-panel-billpay hidden" id="bank-panel-billpay" role="tabpanel">
+            <div class="bank-billpay-browser">
+              <div class="bank-billpay-url-bar">
+                <span class="bank-billpay-url-icon">🔒</span>
+                <input type="text" class="bank-billpay-url-input" value="https://billpay.bnc.bank/secure" readonly>
+              </div>
+              <div class="bank-billpay-content" id="bank-billpay-content">
+                <div class="bank-billpay-loading" id="bank-billpay-loading">Loading…</div>
+                <div class="bank-billpay-error hidden" id="bank-billpay-error">
+                  <div class="bank-billpay-error-icon">⚠️</div>
+                  <p class="bank-billpay-error-title">This page could not be loaded</p>
+                  <p class="bank-billpay-error-detail">ERR_CONNECTION_REFUSED</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bank-panel bank-panel-history hidden" id="bank-panel-history" role="tabpanel">
+            <p class="bank-panel-title">Transaction history</p>
+            <div class="bank-history-list" id="bank-history-list"></div>
+            <p class="bank-history-empty hidden" id="bank-history-empty">No transactions yet this session.</p>
+          </div>
+        </div>
+      </div>
+      <div class="bmail-window" id="bmail-window" aria-label="Bmail" tabindex="0" hidden>
+        <div class="window-title-bar bmail-title">
+          <span class="window-title-icon bmail-title-app-icon">B</span>
+          <span class="window-title-text">Bmail</span>
+          <button type="button" class="bmail-window-close" id="bmail-window-close" aria-label="Close">×</button>
+        </div>
+        <div class="bmail-app">
+          <header class="bmail-header">
+            <span class="bmail-logo">Bmail</span>
+            <span class="bmail-search-placeholder">Search mail</span>
+          </header>
+          <div class="bmail-layout">
+            <nav class="bmail-sidebar">
+              <button type="button" class="bmail-nav-item active">Inbox</button>
+              <button type="button" class="bmail-nav-item">Sent</button>
+              <button type="button" class="bmail-nav-item">Drafts</button>
+            </nav>
+            <div class="bmail-main">
+              <div class="bmail-list" id="bmail-list">
+                <p class="bmail-empty" id="bmail-empty">No messages yet. Make some friends!</p>
+              </div>
+              <div class="bmail-view" id="bmail-view" hidden>
+                <div class="bmail-view-header">
+                  <h2 class="bmail-view-subject" id="bmail-view-subject"></h2>
+                  <div class="bmail-view-meta" id="bmail-view-meta"></div>
+                </div>
+                <div class="bmail-view-body" id="bmail-view-body"></div>
+                <div class="bmail-view-attachment" id="bmail-view-attachment" hidden></div>
+                <div class="bmail-view-decryptor-wrap" id="bmail-view-decryptor-wrap" hidden>
+                  <button type="button" class="bmail-decryptor-btn" id="bmail-run-decryptor-btn">Run decryptor</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fake app windows: File Explorer (featured), Edge, Calendar, Calculator, Documents, Pictures, Music, Videos -->
+      <div class="fake-app-window file-explorer-window" id="file-explorer-window" aria-label="File Explorer" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">📁</span>
+          <span class="window-title-text">File Explorer</span>
+          <button type="button" class="fake-app-window-close" data-window="file-explorer-window" aria-label="Close">×</button>
+        </div>
+        <div class="file-explorer-body">
+          <div class="file-explorer-sidebar">
+            <div class="file-explorer-nav-label">Quick access</div>
+            <button type="button" class="file-explorer-folder active" data-folder="desktop" aria-label="Desktop">📁 Desktop</button>
+            <button type="button" class="file-explorer-folder" data-folder="documents" aria-label="Documents">📁 Documents</button>
+            <button type="button" class="file-explorer-folder" data-folder="pictures" aria-label="Pictures">📁 Pictures</button>
+            <button type="button" class="file-explorer-folder" data-folder="music" aria-label="Music">📁 Music</button>
+            <button type="button" class="file-explorer-folder" data-folder="videos" aria-label="Videos">📁 Videos</button>
+          </div>
+          <div class="file-explorer-main" id="file-explorer-main" role="listbox" aria-label="Folder contents">
+            <!-- Filled by JS: icons (shortcuts + files) -->
+          </div>
+        </div>
+        <div class="file-explorer-context-menu" id="file-explorer-context-menu" role="menu" hidden>
+          <button type="button" class="file-explorer-context-item" data-action="copy" role="menuitem">Copy</button>
+          <button type="button" class="file-explorer-context-item" data-action="paste" role="menuitem">Paste</button>
+        </div>
+      </div>
+      <div class="fake-app-window edge-window" id="edge-window" aria-label="Bicrosoft lEdge" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title edge-title">
+          <span class="window-title-icon">e</span>
+          <span class="window-title-text">Bicrosoft lEdge</span>
+          <button type="button" class="fake-app-window-close" data-window="edge-window" aria-label="Close">×</button>
+        </div>
+        <div class="edge-body">
+          <div class="edge-address-bar">
+            <span class="edge-address-icon" id="edge-address-icon">🔒</span>
+            <input type="text" class="edge-address-input" id="edge-address-input" placeholder="Enter URL or search" value="" />
+            <button type="button" class="edge-go-btn" id="edge-go-btn">Go</button>
+          </div>
+          <div class="edge-content" id="edge-content">
+            <div class="edge-page edge-home" id="edge-home">
+              <p class="edge-home-text">Enter a URL above and press Go to browse.</p>
+            </div>
+            <div class="edge-page edge-block hidden" id="edge-firewall-block">
+              <div class="edge-block-icon">🛡️</div>
+              <h2 class="edge-block-title">Access blocked</h2>
+              <p class="edge-block-detail">Your organization's firewall has blocked this site.</p>
+              <p class="edge-block-url" id="edge-blocked-url"></p>
+              <p class="edge-block-hint">ERR_NETWORK_ACCESS_DENIED</p>
+            </div>
+            <div class="edge-page edge-block edge-onion-block hidden" id="edge-onion-block">
+              <div class="edge-block-icon">⚠️</div>
+              <h2 class="edge-block-title">.onion addresses not supported</h2>
+              <p class="edge-block-detail">You can't use .onion addresses in a regular browser. Use Tor Browser to access .onion sites.</p>
+              <p class="edge-block-url" id="edge-onion-url"></p>
+              <p class="edge-block-hint">ERR_TOR_ONION_NOT_ALLOWED</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="fake-app-window settings-window" id="settings-window" aria-label="Settings" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">⚙</span>
+          <span class="window-title-text">Settings</span>
+          <button type="button" class="fake-app-window-close" data-window="settings-window" aria-label="Close">×</button>
+        </div>
+        <div class="fake-app-body">
+          <p class="fake-app-placeholder">System · Devices · Network · Personalization — Simulation. No settings are saved.</p>
+        </div>
+      </div>
+      <div class="fake-app-window calendar-window" id="calendar-window" aria-label="Calendar" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">📅</span>
+          <span class="window-title-text">Calendar</span>
+          <button type="button" class="fake-app-window-close" data-window="calendar-window" aria-label="Close">×</button>
+        </div>
+        <div class="calendar-body">
+          <div class="calendar-toolbar">
+            <button type="button" class="calendar-nav-btn" id="calendar-prev-month" aria-label="Previous month">‹</button>
+            <span class="calendar-month-year" id="calendar-month-year"></span>
+            <button type="button" class="calendar-nav-btn" id="calendar-next-month" aria-label="Next month">›</button>
+          </div>
+          <div class="calendar-weekdays">
+            <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+          </div>
+          <div class="calendar-grid" id="calendar-grid" role="grid"></div>
+          <div class="calendar-add-section">
+            <h3 class="calendar-section-title">Add event</h3>
+            <div class="calendar-add-row">
+              <label for="calendar-event-date">Date</label>
+              <input type="date" id="calendar-event-date" class="calendar-input" />
+            </div>
+            <div class="calendar-add-row">
+              <label for="calendar-event-title">Title</label>
+              <input type="text" id="calendar-event-title" class="calendar-input" placeholder="Event title" maxlength="100" />
+            </div>
+            <button type="button" class="calendar-btn calendar-btn-add" id="calendar-add-event">Add event</button>
+          </div>
+          <div class="calendar-events-section" id="calendar-events-section">
+            <h3 class="calendar-section-title" id="calendar-events-title">Events</h3>
+            <ul class="calendar-events-list" id="calendar-events-list"></ul>
+          </div>
+        </div>
+      </div>
+      <div class="fake-app-window photos-window" id="photos-window" aria-label="Photos" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">🖼</span>
+          <span class="window-title-text">Photos</span>
+          <button type="button" class="fake-app-window-close" data-window="photos-window" aria-label="Close">×</button>
+        </div>
+        <div class="fake-app-body">
+          <p class="fake-app-placeholder">Photos app simulation. No images in this training environment.</p>
+        </div>
+      </div>
+      <div class="fake-app-window calculator-window" id="calculator-window" aria-label="Calculator" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">🔢</span>
+          <span class="window-title-text">Calculator</span>
+          <button type="button" class="fake-app-window-close" data-window="calculator-window" aria-label="Close">×</button>
+        </div>
+        <div class="fake-app-body calculator-body">
+          <div class="calculator-display" id="calculator-display">0</div>
+          <div class="calculator-buttons">
+            <button type="button" class="calculator-btn calculator-btn-fn" id="calculator-clear">C</button>
+            <button type="button" class="calculator-btn calculator-btn-op" data-op="±">±</button>
+            <button type="button" class="calculator-btn calculator-btn-op" data-op="%">%</button>
+            <button type="button" class="calculator-btn calculator-btn-op" data-op="/">/</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="7">7</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="8">8</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="9">9</button>
+            <button type="button" class="calculator-btn calculator-btn-op" data-op="*">×</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="4">4</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="5">5</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="6">6</button>
+            <button type="button" class="calculator-btn calculator-btn-op" data-op="-">−</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="1">1</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="2">2</button>
+            <button type="button" class="calculator-btn calculator-btn-num" data-num="3">3</button>
+            <button type="button" class="calculator-btn calculator-btn-op" data-op="+">+</button>
+            <button type="button" class="calculator-btn calculator-btn-num calculator-btn-zero" data-num="0">0</button>
+            <button type="button" class="calculator-btn calculator-btn-dot" id="calculator-dot">.</button>
+            <button type="button" class="calculator-btn calculator-btn-eq" id="calculator-equals">=</button>
+          </div>
+        </div>
+      </div>
+      <div class="fake-app-window documents-window" id="documents-window" aria-label="Documents" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">📄</span>
+          <span class="window-title-text">Documents</span>
+          <button type="button" class="fake-app-window-close" data-window="documents-window" aria-label="Close">×</button>
+        </div>
+        <div class="fake-app-body">
+          <p class="fake-app-placeholder">Documents folder simulation. Open File Explorer to browse files.</p>
+        </div>
+      </div>
+      <div class="fake-app-window pictures-window" id="pictures-window" aria-label="Pictures" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">🖼</span>
+          <span class="window-title-text">Pictures</span>
+          <button type="button" class="fake-app-window-close" data-window="pictures-window" aria-label="Close">×</button>
+        </div>
+        <div class="fake-app-body">
+          <p class="fake-app-placeholder">Pictures folder simulation.</p>
+        </div>
+      </div>
+      <div class="fake-app-window music-window" id="music-window" aria-label="Music" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">🎵</span>
+          <span class="window-title-text">Music</span>
+          <button type="button" class="fake-app-window-close" data-window="music-window" aria-label="Close">×</button>
+        </div>
+        <div class="fake-app-body">
+          <p class="fake-app-placeholder">Music folder simulation.</p>
+        </div>
+      </div>
+      <div class="fake-app-window videos-window" id="videos-window" aria-label="Videos" tabindex="0" hidden>
+        <div class="window-title-bar fake-app-title">
+          <span class="window-title-icon">🎬</span>
+          <span class="window-title-text">Videos</span>
+          <button type="button" class="fake-app-window-close" data-window="videos-window" aria-label="Close">×</button>
+        </div>
+        <div class="fake-app-body">
+          <p class="fake-app-placeholder">Videos folder simulation.</p>
+        </div>
+      </div>
+
+      <!-- File viewer: shows fake desktop file content (garbled when encrypted, readable after decryptor) -->
+      <div class="file-viewer-window" id="file-viewer-window" aria-label="File viewer" tabindex="0" hidden>
+        <div class="window-title-bar file-viewer-title">
+          <span class="window-title-icon" id="file-viewer-icon">📄</span>
+          <span class="window-title-text" id="file-viewer-title">Document</span>
+          <button type="button" class="file-viewer-close" id="file-viewer-close" aria-label="Close">×</button>
+        </div>
+        <div class="file-viewer-body">
+          <pre class="file-viewer-content" id="file-viewer-content"></pre>
+        </div>
+      </div>
+
+      <!-- Ransom tracker popup: shows current BTC demand and hours remaining (opens when chat opens) -->
+      <div class="ransom-tracker-window" id="ransom-tracker-window" aria-label="Blackout Payment Tracker" tabindex="0" hidden>
+        <div class="window-title-bar ransom-tracker-title">
+          <span class="window-title-icon">⚡</span>
+          <span class="window-title-text">Blackout — Payment Tracker</span>
+          <button type="button" class="ransom-tracker-close" id="ransom-tracker-close" aria-label="Close">×</button>
+        </div>
+        <div class="ransom-tracker-body">
+          <div class="ransom-tracker-row" id="ransom-tracker-btc-row">
+            <span class="ransom-tracker-label">Ransom</span>
+            <span class="ransom-tracker-value" id="ransom-tracker-btc">2.50 BTC</span>
+          </div>
+          <div class="ransom-tracker-row">
+            <span class="ransom-tracker-label">Time remaining</span>
+            <span class="ransom-tracker-value" id="ransom-tracker-deadline">72h 00m</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leaderboard: standalone window, opened from Start menu -->
+      <div class="leaderboard-window" id="leaderboard-window" aria-label="Leaderboard" tabindex="0" hidden>
+        <div class="window-title-bar leaderboard-window-title">
+          <span class="window-title-icon">🏆</span>
+          <span class="window-title-text">Leaderboard</span>
+        </div>
+        <div class="leaderboard-window-body">
+          <div id="leaderboard-window-content" class="leaderboard-window-content"></div>
+        </div>
+      </div>
+
+      <!-- Game window: visible after README opened; shows section label only during negotiation -->
+      <div class="game-window" id="game-window" hidden>
+        <div class="window-title-bar game-window-title">
+          <span class="window-title-icon">🛡️</span>
+          <span class="window-title-text">Incident Response — Operation Blackout</span>
+          <button type="button" class="game-window-close" id="game-window-close" aria-label="Close">×</button>
+        </div>
+        <div class="game-window-body">
+          <div id="section-label" class="section-label"></div>
+          <nav class="game-nav">
+            <a href="#" id="nav-leaderboard">Leaderboard</a>
+          </nav>
+          <section data-view="results" class="view">
+            <div id="results-content" class="view-content"></div>
+          </section>
+          <section data-view="leaderboard" class="view">
+            <div id="leaderboard-content" class="view-content"></div>
+          </section>
+        </div>
+      </div>
+      </div>
+    </div>
+
+    <!-- New message popup: bottom-right of desktop, shows for a few seconds when Bmail receives a message -->
+    <div class="bmail-new-message-popup" id="bmail-new-message-popup" aria-live="polite" hidden>
+      <span class="bmail-popup-icon">✉</span>
+      <span class="bmail-popup-text">New email received</span>
+      <button type="button" class="bmail-popup-read-btn" id="bmail-popup-read-btn">Read message</button>
+    </div>
+
+    <!-- Chat: fixed lower-right, visible once game started -->
+    <div class="chat-panel" id="chat-panel" hidden>
+      <div class="chat-panel-header">
+        <span class="chat-panel-title">🔒 Dark web — Negotiation</span>
+        <div class="chat-panel-header-actions">
+          <button type="button" class="chat-panel-tracker-btn" id="chat-panel-open-tracker" aria-label="Open payment tracker">📋 Tracker</button>
+          <button type="button" class="chat-panel-toggle" id="chat-panel-toggle" aria-label="Minimize chat">−</button>
+        </div>
+      </div>
+      <div class="chat-panel-body" id="chat-panel-body">
+        <div class="chat-panel-messages" id="chat-panel-messages"></div>
+        <div class="chat-panel-input-wrap">
+          <div class="chat-panel-input-row">
+            <textarea id="chat-panel-input" class="chat-panel-input" rows="2" placeholder="Type your response…" maxlength="500"></textarea>
+            <button type="button" class="chat-panel-send" id="chat-panel-send" aria-label="Send">Send</button>
+          </div>
+          <button type="button" class="chat-suggestions-toggle" id="chat-suggestions-toggle" aria-expanded="false" aria-controls="chat-suggestions-drawer">💡 Suggestions</button>
+        </div>
+        <div class="chat-suggestions-drawer" id="chat-suggestions-drawer" role="region" aria-label="Response suggestions" hidden>
+          <div class="chat-suggestions-content" id="chat-suggestions-content"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quiz popup: animated, only during quiz rounds -->
+    <div class="quiz-overlay" id="quiz-overlay" hidden aria-hidden="true">
+      <div class="quiz-popup" id="quiz-popup">
+        <div class="quiz-popup-content" id="quiz-popup-content"></div>
+      </div>
+    </div>
+
+    <div class="taskbar">
+      <button type="button" class="taskbar-start" id="taskbar-start" aria-label="Start">Start</button>
+      <div class="taskbar-tray">
+        <span class="taskbar-time" id="taskbar-time">--:--</span>
+      </div>
+    </div>
+
+    <!-- Fake Windows-style Start menu -->
+    <div class="start-menu" id="start-menu" hidden aria-hidden="true">
+      <div class="start-menu-body">
+        <div class="start-menu-left start-menu-left-single">
+          <div class="start-menu-tile" id="start-menu-file-explorer">File Explorer</div>
+          <div class="start-menu-tile" id="start-menu-leaderboard">Leaderboard</div>
+          <div class="start-menu-tile" id="start-menu-edge">Bicrosoft lEdge</div>
+          <div class="start-menu-tile" id="start-menu-calendar">Calendar</div>
+          <div class="start-menu-tile" id="start-menu-calculator">Calculator</div>
+        </div>
+        <div class="start-menu-right">
+          <div class="start-menu-item start-menu-item-clickable" id="start-menu-documents">Documents</div>
+          <div class="start-menu-item start-menu-item-clickable" id="start-menu-pictures">Pictures</div>
+          <div class="start-menu-item start-menu-item-clickable" id="start-menu-music">Music</div>
+          <div class="start-menu-item start-menu-item-clickable" id="start-menu-videos">Videos</div>
+          <div class="start-menu-item start-menu-logoff" id="start-menu-logoff">Log off</div>
+          <div class="start-menu-item start-menu-power" id="start-menu-power">Power</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <p>Based on the <a href="https://www.cisa.gov/ransomware-response-checklist" target="_blank" rel="noopener">CISA Ransomware Response Checklist</a> (Joint CISA &amp; MS-ISAC). For training only.</p>
+  </footer>
+
+  <script src="js/data.js"></script>
+  <script src="js/game.js"></script>
+  <script>
+    (function () {
+      function updateTime() {
+        const el = document.getElementById('taskbar-time');
+        if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      updateTime();
+      setInterval(updateTime, 1000);
+    })();
+  </script>
+</body>
+</html>
