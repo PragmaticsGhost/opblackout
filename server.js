@@ -419,12 +419,57 @@ const server = http.createServer((req, res) => {
               (r.includes('sending you') && (r.includes('decrypt') || r.includes('decrypted'))) ||
               (r.includes('check your inbox') && (r.includes('decrypt') || r.includes('decrypted') || r.includes('decryptor')));
             const proofOfDecryptionSent = userAskedProofDecrypt || operatorSendingProofDecrypt;
+            let trackerRansomBtc = null;
+            let trackerDeadlineHours = null;
+            try {
+              const extractResp = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: 'Bearer ' + OPENAI_API_KEY,
+                },
+                body: JSON.stringify({
+                  model: 'gpt-4o-mini',
+                  messages: [
+                    {
+                      role: 'system',
+                      content:
+                        'You extract the current ransom (BTC) and deadline (hours) from a ransomware operator message. Reply with valid JSON only: {"ransomBtc": number or null, "deadlineHours": number or null}. Use null if not stated. Example: "Pay 1.8 BTC in 72 hours" -> {"ransomBtc": 1.8, "deadlineHours": 72}.',
+                    },
+                    {
+                      role: 'user',
+                      content: 'Message: ' + reply,
+                    },
+                  ],
+                  max_tokens: 60,
+                  temperature: 0,
+                  response_format: { type: 'json_object' },
+                }),
+              });
+              const extractData = await extractResp.json();
+              if (!extractData.error && extractData.choices && extractData.choices[0]) {
+                const text = extractData.choices[0].message?.content;
+                if (typeof text === 'string') {
+                  const parsed = JSON.parse(text);
+                  if (typeof parsed.ransomBtc === 'number' && parsed.ransomBtc > 0 && parsed.ransomBtc <= 100) {
+                    trackerRansomBtc = parsed.ransomBtc;
+                  }
+                  if (typeof parsed.deadlineHours === 'number' && parsed.deadlineHours > 0 && parsed.deadlineHours <= 168) {
+                    trackerDeadlineHours = parsed.deadlineHours;
+                  }
+                }
+              }
+            } catch (_) {
+              /* non-fatal: client falls back to regex parsing */
+            }
             setJson(200, {
               reply,
               conversationId: convId,
               decryptorAgreed,
               proofOfStolenDataSent: !!proofOfStolenDataSent,
               proofOfDecryptionSent: !!proofOfDecryptionSent,
+              trackerRansomBtc: trackerRansomBtc ?? undefined,
+              trackerDeadlineHours: trackerDeadlineHours ?? undefined,
             });
           } catch (e) {
             setJson(502, { error: e.message || 'OpenAI request failed' });

@@ -942,16 +942,18 @@
     }
   }
 
-  /** Run when README.txt is opened (desktop icon, File Explorer, or shortcut). Starts timer on first open this session and opens tracker once. */
+  /** Run when README.txt is opened (desktop icon, File Explorer, or shortcut). On first open this session, always show 2.5 BTC and 72h, then open tracker once. */
   function onReadmeOpened() {
     if (!state.started) startGame();
-    if (state.ransomDeadlineStartRealTime == null) {
-      state.ransomDeadlineStartRealTime = Date.now();
-      if (state.ransomDeadlineGameHours == null) state.ransomDeadlineGameHours = 72;
-    }
     if (!state.ransomTrackerShownOnFirstReadme) {
+      state.ransomBtcAmount = typeof RANSOM_BTC_AMOUNT === 'number' ? RANSOM_BTC_AMOUNT : 2.5;
+      state.ransomDeadlineGameHours = typeof INITIAL_DEADLINE_HOURS === 'number' ? INITIAL_DEADLINE_HOURS : 72;
+      state.ransomDeadlineStartRealTime = Date.now();
       openRansomTracker();
       state.ransomTrackerShownOnFirstReadme = true;
+    } else if (state.ransomDeadlineStartRealTime == null) {
+      state.ransomDeadlineStartRealTime = Date.now();
+      if (state.ransomDeadlineGameHours == null) state.ransomDeadlineGameHours = 72;
     }
   }
 
@@ -968,7 +970,9 @@
       text.match(/(\d+)\s*hours?\s*(?:remaining|left|to pay|until|from now)/i) ||
       text.match(/(\d+)\s*hour\s*deadline/i) ||
       text.match(/(?:deadline|time)\s*(?:of|:)?\s*(\d+)\s*hours?/i) ||
-      text.match(/(\d+)\s*hours?\.?\s*(?:no more|final|last chance)/i);
+      text.match(/(\d+)\s*hours?\.?\s*(?:no more|final|last chance)/i) ||
+      text.match(/(\d+)\s*h\s*(?:remaining|left|to pay|no more|final)/i) ||
+      text.match(/(?:pay|send)\s*(?:in|within)\s*(\d+)\s*(?:h|hours?)/i);
     if (hoursMatch) {
       var hrs = parseInt(hoursMatch[1], 10);
       if (!isNaN(hrs) && hrs > 0 && hrs <= 168) {
@@ -976,6 +980,19 @@
         state.ransomDeadlineGameHours = hrs;
       }
     }
+  }
+
+  /** Apply tracker values from API (OpenAI-extracted ransom/deadline). Overrides regex parsing when present. */
+  function applyTrackerFromApi(data) {
+    if (!data) return;
+    if (typeof data.trackerRansomBtc === 'number' && data.trackerRansomBtc > 0 && data.trackerRansomBtc <= 100) {
+      state.ransomBtcAmount = data.trackerRansomBtc;
+    }
+    if (typeof data.trackerDeadlineHours === 'number' && data.trackerDeadlineHours > 0 && data.trackerDeadlineHours <= 168) {
+      state.ransomDeadlineGameHours = data.trackerDeadlineHours;
+      if (state.ransomDeadlineStartRealTime == null) state.ransomDeadlineStartRealTime = Date.now();
+    }
+    updateRansomTrackerDisplay();
   }
 
   function renderTorChatSuggestions() {
@@ -1158,8 +1175,12 @@
           reply = 'No response.';
         }
         appendChatMessage('operator', reply);
-        parseOperatorReplyForRansom(reply);
-        updateRansomTrackerDisplay();
+        if (result.ok && (result.data.trackerRansomBtc != null || result.data.trackerDeadlineHours != null)) {
+          applyTrackerFromApi(result.data);
+        } else {
+          parseOperatorReplyForRansom(reply);
+          updateRansomTrackerDisplay();
+        }
         if (!state.decryptorAgreed && result.ok && result.data.decryptorAgreed === true) {
           state.decryptorAgreed = true;
           addBmailEmail(
@@ -2294,8 +2315,12 @@
             reply = 'No response.';
           }
           appendChatMessageInTor('operator', reply);
-          parseOperatorReplyForRansom(reply);
-          updateRansomTrackerDisplay();
+          if (result.ok && (result.data.trackerRansomBtc != null || result.data.trackerDeadlineHours != null)) {
+            applyTrackerFromApi(result.data);
+          } else {
+            parseOperatorReplyForRansom(reply);
+            updateRansomTrackerDisplay();
+          }
           if (!state.decryptorAgreed && result.ok && result.data.decryptorAgreed === true) {
             state.decryptorAgreed = true;
             addBmailEmail(
