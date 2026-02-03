@@ -220,6 +220,7 @@
 
   function applyRestoredStateUI() {
     updateRansomNoteContent();
+    if (typeof updateStartMenuUsername === 'function') updateStartMenuUsername();
     renderDesktopFakeFiles();
     updateWalletBalanceDisplay();
     updateBankBalanceDisplay();
@@ -927,6 +928,13 @@
     } else if (deadlineEl) {
       deadlineEl.textContent = '72h 00m';
     }
+  }
+
+  function updateStartMenuUsername() {
+    var el = document.getElementById('start-menu-username-text');
+    if (el) el.textContent = state.sessionUsername || '';
+    var row = document.getElementById('start-menu-username');
+    if (row) row.style.display = state.sessionUsername ? '' : 'none';
   }
 
   function openRansomTracker() {
@@ -3160,6 +3168,7 @@
         e.stopPropagation();
         startMenu.hidden = !startMenu.hidden;
         startMenu.setAttribute('aria-hidden', String(startMenu.hidden));
+        if (!startMenu.hidden && typeof updateStartMenuUsername === 'function') updateStartMenuUsername();
       });
     }
     if (startMenu) {
@@ -3289,6 +3298,7 @@
         var raw = (loginUsernameEl.value || '').trim();
         if (raw.length < 1 || raw.length > 50) return;
         state.sessionUsername = raw;
+        if (typeof updateStartMenuUsername === 'function') updateStartMenuUsername();
         try { localStorage.setItem(SESSION_STORAGE_KEY, raw); } catch (err) {}
         var savedForUser = null;
         try { savedForUser = localStorage.getItem(getStateKey(raw)); } catch (err) {}
