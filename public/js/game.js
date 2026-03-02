@@ -44,6 +44,8 @@
     fileExplorerItems: { documents: [], pictures: [], music: [], videos: [] },
     fileExplorerClipboard: null,
     ransomTrackerShownOnFirstReadme: false,
+    deadlineExpired: false,
+    consequenceShown: false,
     calendarEvents: [],
     calendarViewYear: null,
     calendarViewMonth: null,
@@ -58,6 +60,103 @@
 
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
+
+  /* ---- Taskbar window management ---- */
+  var TASKBAR_WINDOWS = {
+    'readme-window':          { icon: '📄', label: 'README.txt' },
+    'wallet-window':          { icon: '😈', label: 'Wallet' },
+    'tor-window':             { icon: '🧅', label: 'Tor Browser' },
+    'bank-window':            { icon: '🏦', label: 'BNC Banking' },
+    'bmail-window':           { icon: 'B',  label: 'Bmail' },
+    'file-explorer-window':   { icon: '📁', label: 'File Explorer' },
+    'leaderboard-window':     { icon: '🏆', label: 'Leaderboard' },
+    'edge-window':            { icon: '🌐', label: 'lEdge' },
+    'calendar-window':        { icon: '📅', label: 'Calendar' },
+    'calculator-window':      { icon: '🧮', label: 'Calculator' },
+  };
+  var taskbarTopZ = 20;
+
+  function addToTaskbar(windowId) {
+    var container = document.getElementById('taskbar-apps');
+    if (!container) return;
+    if (document.getElementById('taskbar-btn-' + windowId)) return;
+    var info = TASKBAR_WINDOWS[windowId];
+    if (!info) return;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'taskbar-app-btn';
+    btn.id = 'taskbar-btn-' + windowId;
+    btn.setAttribute('data-window', windowId);
+    btn.innerHTML =
+      '<span class="taskbar-app-icon">' + info.icon + '</span>' +
+      '<span class="taskbar-app-label">' + info.label + '</span>';
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      taskbarToggleWindow(windowId);
+    });
+    container.appendChild(btn);
+  }
+
+  function removeFromTaskbar(windowId) {
+    var btn = document.getElementById('taskbar-btn-' + windowId);
+    if (btn) btn.remove();
+    refreshTaskbarActiveStates();
+  }
+
+  function bringWindowToFront(windowId) {
+    var win = document.getElementById(windowId);
+    if (!win) return;
+    taskbarTopZ++;
+    win.style.zIndex = taskbarTopZ;
+    refreshTaskbarActiveStates();
+  }
+
+  function getTopVisibleWindowId() {
+    var highest = -1;
+    var topId = null;
+    Object.keys(TASKBAR_WINDOWS).forEach(function (wid) {
+      var el = document.getElementById(wid);
+      if (el && !el.hidden) {
+        var z = parseInt(el.style.zIndex, 10) || 0;
+        if (z > highest) { highest = z; topId = wid; }
+      }
+    });
+    return topId;
+  }
+
+  function refreshTaskbarActiveStates() {
+    var topId = getTopVisibleWindowId();
+    var container = document.getElementById('taskbar-apps');
+    if (!container) return;
+    var btns = container.querySelectorAll('.taskbar-app-btn');
+    btns.forEach(function (btn) {
+      var wid = btn.getAttribute('data-window');
+      btn.classList.toggle('taskbar-app-active', wid === topId);
+    });
+  }
+
+  function taskbarToggleWindow(windowId) {
+    var win = document.getElementById(windowId);
+    if (!win) return;
+    var topId = getTopVisibleWindowId();
+    if (!win.hidden && windowId === topId) {
+      win.setAttribute('hidden', 'true');
+      refreshTaskbarActiveStates();
+    } else {
+      if (win.hidden) {
+        win.removeAttribute('hidden');
+      }
+      bringWindowToFront(windowId);
+    }
+  }
+
+  function clearTaskbar() {
+    var container = document.getElementById('taskbar-apps');
+    if (container) container.innerHTML = '';
+  }
+
+  /* ---- End taskbar window management ---- */
 
   function shuffleArray(arr) {
     const a = [...arr];
@@ -121,6 +220,8 @@
       bmailEmails: state.bmailEmails,
       filesDecrypted: state.filesDecrypted,
       decryptorAgreed: state.decryptorAgreed,
+      deadlineExpired: state.deadlineExpired,
+      consequenceShown: state.consequenceShown,
       bankBalance: state.bankBalance,
       savingsBalance: state.savingsBalance,
       bankTransactions: state.bankTransactions,
@@ -175,6 +276,8 @@
     if (Array.isArray(obj.bmailEmails)) state.bmailEmails = obj.bmailEmails;
     if (obj.filesDecrypted != null) state.filesDecrypted = !!obj.filesDecrypted;
     if (obj.decryptorAgreed != null) state.decryptorAgreed = !!obj.decryptorAgreed;
+    if (obj.deadlineExpired != null) state.deadlineExpired = !!obj.deadlineExpired;
+    if (obj.consequenceShown != null) state.consequenceShown = !!obj.consequenceShown;
     if (typeof obj.bankBalance === 'number') state.bankBalance = obj.bankBalance;
     if (typeof obj.savingsBalance === 'number') state.savingsBalance = obj.savingsBalance;
     if (Array.isArray(obj.bankTransactions)) state.bankTransactions = obj.bankTransactions;
@@ -457,7 +560,152 @@
     var decryptorWrap = $('#bmail-view-decryptor-wrap');
     if (decryptorWrap) decryptorWrap.setAttribute('hidden', 'true');
     saveState();
+    if (!state.consequenceShown) {
+      showDecryptionSuccessPopup();
+    }
   }
+
+  /* ---- Consequence popups ---- */
+
+  function showConsequencePopup(variant, html) {
+    var overlay = document.getElementById('consequence-overlay');
+    var popup = document.getElementById('consequence-popup');
+    var content = document.getElementById('consequence-popup-content');
+    if (!overlay || !popup || !content) return;
+    popup.className = 'consequence-popup';
+    if (variant) popup.classList.add('consequence-' + variant);
+    content.innerHTML = html;
+    overlay.hidden = false;
+    overlay.removeAttribute('aria-hidden');
+    requestAnimationFrame(function () {
+      popup.classList.add('consequence-popup-visible');
+    });
+    content.querySelectorAll('[data-consequence-action]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var action = btn.getAttribute('data-consequence-action');
+        hideConsequencePopup();
+        if (action === 'continue') {
+          /* resume the game — proceed to assessment */
+        }
+        if (action === 'play-again') {
+          triggerPlayAgain();
+        }
+      });
+    });
+    state.consequenceShown = true;
+    saveState();
+  }
+
+  function hideConsequencePopup() {
+    var overlay = document.getElementById('consequence-overlay');
+    var popup = document.getElementById('consequence-popup');
+    if (!popup || !overlay) return;
+    popup.classList.remove('consequence-popup-visible');
+    setTimeout(function () {
+      overlay.hidden = true;
+      overlay.setAttribute('aria-hidden', 'true');
+    }, 350);
+  }
+
+  function showDeadlineExpiredPopup() {
+    state.deadlineExpired = true;
+    if (state.ransomTrackerTickId != null) {
+      clearInterval(state.ransomTrackerTickId);
+      state.ransomTrackerTickId = null;
+    }
+    var ransomAmt = state.ransomBtcAmount != null ? Number(state.ransomBtcAmount).toFixed(2) : '2.50';
+    showConsequencePopup('leak',
+      '<span class="consequence-icon">&#9888;&#65039;</span>' +
+      '<h2>Deadline Expired — Data Leaked</h2>' +
+      '<p class="consequence-subtitle">The 72-hour deadline has passed and no payment was received. ' +
+      'Blackout has followed through on their threat and published Midwest Regional Health\'s stolen data on their dark-web leak site.</p>' +
+
+      '<div class="consequence-section">' +
+      '<h3>What happens now (in a real incident):</h3>' +
+      '<ul>' +
+      '<li><strong>Data exposure</strong> — Patient records, employee PII, and financial data are now publicly available on the dark web, accessible to any threat actor.</li>' +
+      '<li><strong>Regulatory penalties</strong> — HIPAA violations can result in fines of $100 to $50,000 per record, with annual maximums of $1.5 million per violation category.</li>' +
+      '<li><strong>Class-action lawsuits</strong> — Affected patients and employees may file lawsuits for failure to protect their personal information.</li>' +
+      '<li><strong>Reputational damage</strong> — Loss of patient trust, negative media coverage, and long-term damage to the organization\'s reputation.</li>' +
+      '<li><strong>Operational impact</strong> — Systems remain encrypted, forcing manual operations, delayed care, and potential patient diversions to other facilities.</li>' +
+      '</ul>' +
+      '</div>' +
+
+      '<hr class="consequence-divider">' +
+
+      '<div class="consequence-section">' +
+      '<h3>Key takeaways:</h3>' +
+      '<ul>' +
+      '<li>Ransomware deadlines are real — threat actors often follow through on data leak threats to maintain credibility.</li>' +
+      '<li>Having a tested incident response plan and offline backups can dramatically reduce your dependence on negotiation.</li>' +
+      '<li>Early engagement with law enforcement (FBI, CISA) can provide decryption tools, threat intelligence, and negotiation guidance.</li>' +
+      '<li>Cyber insurance can offset costs, but prevention and preparation are always the best investment.</li>' +
+      '</ul>' +
+      '</div>' +
+
+      '<div class="consequence-actions">' +
+      '<button type="button" class="btn btn-primary" data-consequence-action="play-again">Play Again</button>' +
+      '</div>'
+    );
+  }
+
+  function showDecryptionSuccessPopup() {
+    var ransomAmt = state.ransomBtcAmount != null ? Number(state.ransomBtcAmount).toFixed(2) : '2.50';
+    var totalPaid = 0;
+    state.ransomPayments.forEach(function (p) { totalPaid += p.amount; });
+    var paidStr = totalPaid.toFixed(2);
+    showConsequencePopup('win',
+      '<span class="consequence-icon">&#9989;</span>' +
+      '<h2>Files Decrypted — But at What Cost?</h2>' +
+      '<p class="consequence-subtitle">You paid ' + paidStr + ' BTC and successfully decrypted Midwest Regional Health\'s systems. ' +
+      'Operations can resume — but the incident is far from over.</p>' +
+
+      '<div class="consequence-section">' +
+      '<h3>Why paying the ransom is risky:</h3>' +
+      '<ul>' +
+      '<li><strong>No guarantee of data deletion</strong> — Even after payment, attackers often retain copies of stolen data. It may still be sold or leaked later.</li>' +
+      '<li><strong>Funding criminal enterprise</strong> — Ransom payments directly fund future attacks. The FBI estimates ransomware groups reinvest 70%+ of proceeds into new operations.</li>' +
+      '<li><strong>Becoming a repeat target</strong> — Organizations that pay are often hit again. Attackers share lists of "payers" with other groups.</li>' +
+      '<li><strong>Regulatory scrutiny</strong> — OFAC (Office of Foreign Assets Control) sanctions may make payments to certain groups illegal, exposing your organization to federal penalties.</li>' +
+      '<li><strong>Incomplete recovery</strong> — Decryptors provided by ransomware groups often fail on 5-20% of files, leaving permanent data loss.</li>' +
+      '</ul>' +
+      '</div>' +
+
+      '<hr class="consequence-divider">' +
+
+      '<div class="consequence-section">' +
+      '<h3>What you should do next (in a real incident):</h3>' +
+      '<ul>' +
+      '<li>Report the incident to the FBI\'s IC3 (<a href="https://ic3.gov" target="_blank" rel="noopener">ic3.gov</a>) and CISA.</li>' +
+      '<li>Conduct a full forensic investigation to determine how attackers gained access and whether backdoors remain.</li>' +
+      '<li>Notify affected individuals and regulators as required by HIPAA and state breach notification laws.</li>' +
+      '<li>Rebuild compromised systems from clean images — do not trust systems that were encrypted even after decryption.</li>' +
+      '<li>Implement improvements: MFA, network segmentation, offline backups, and endpoint detection.</li>' +
+      '</ul>' +
+      '</div>' +
+
+      '<div class="consequence-actions">' +
+      '<button type="button" class="btn btn-primary" data-consequence-action="continue">Continue to Assessment</button>' +
+      '</div>'
+    );
+  }
+
+  function triggerPlayAgain() {
+    var loginScreen = document.getElementById('login-screen');
+    if (loginScreen) loginScreen.removeAttribute('hidden');
+    closeAllAppWindows();
+    clearTaskbar();
+    var gw = $('#game-window');
+    if (gw) gw.setAttribute('hidden', 'true');
+    var readmeWindow = document.getElementById('readme-window');
+    if (readmeWindow) {
+      readmeWindow.classList.remove('readme-window-open');
+      readmeWindow.setAttribute('hidden', 'true');
+    }
+    removeFromTaskbar('readme-window');
+  }
+
+  /* ---- End consequence popups ---- */
 
   var FAKE_APP_WINDOW_IDS = [
     'file-explorer-window', 'edge-window', 'calendar-window', 'calculator-window',
@@ -513,6 +761,8 @@
       var w = $('#readme-window');
       if (w) {
         w.removeAttribute('hidden');
+        addToTaskbar('readme-window');
+        bringWindowToFront('readme-window');
         requestAnimationFrame(function () {
           w.classList.add('readme-window-open');
           if (typeof onReadmeOpened === 'function') onReadmeOpened();
@@ -521,8 +771,9 @@
     } else if (action === 'wallet') {
       var w = document.getElementById('wallet-window');
       if (w) {
-        closeAllAppWindows();
         w.removeAttribute('hidden');
+        addToTaskbar('wallet-window');
+        bringWindowToFront('wallet-window');
         requestAnimationFrame(function () {
           w.classList.add('wallet-window-open');
           if (typeof updateWalletBalanceDisplay === 'function') updateWalletBalanceDisplay();
@@ -533,12 +784,12 @@
       }
     } else if (action === 'bank') {
       var w = document.getElementById('bank-window');
-      if (w) { closeAllAppWindows(); w.removeAttribute('hidden'); requestAnimationFrame(function () { w.classList.add('bank-window-open'); }); }
+      if (w) { w.removeAttribute('hidden'); addToTaskbar('bank-window'); bringWindowToFront('bank-window'); requestAnimationFrame(function () { w.classList.add('bank-window-open'); }); }
     } else if (action === 'bmail') {
       openBmailWindow();
     } else if (action === 'tor') {
       var w = document.getElementById('tor-window');
-      if (w) { closeAllAppWindows(); w.removeAttribute('hidden'); requestAnimationFrame(function () { w.classList.add('tor-window-open'); }); }
+      if (w) { w.removeAttribute('hidden'); addToTaskbar('tor-window'); bringWindowToFront('tor-window'); requestAnimationFrame(function () { w.classList.add('tor-window-open'); }); }
     }
   }
 
@@ -789,8 +1040,9 @@
   function openFakeAppWindow(windowId) {
     var win = document.getElementById(windowId);
     if (!win) return;
-    closeAllAppWindows();
     win.removeAttribute('hidden');
+    addToTaskbar(windowId);
+    bringWindowToFront(windowId);
     requestAnimationFrame(function () {
       win.classList.add('fake-app-window-open');
       if (windowId === 'file-explorer-window') setFileExplorerFolder(state.fileExplorerSelectedFolder);
@@ -809,6 +1061,7 @@
     if (!win) return;
     win.classList.remove('fake-app-window-open');
     win.setAttribute('hidden', 'true');
+    removeFromTaskbar(windowId);
   }
 
   /** Close BNC Banking, Bitmonster - BTC Wallet, Bmail, Tor Browser, and all fake app windows. README is not affected. */
@@ -839,10 +1092,11 @@
   }
 
   function openBmailAndShowLatestEmail() {
-    closeAllAppWindows();
     var bmailWindow = document.getElementById('bmail-window');
     if (!bmailWindow) return;
     bmailWindow.removeAttribute('hidden');
+    addToTaskbar('bmail-window');
+    bringWindowToFront('bmail-window');
     requestAnimationFrame(function () {
       bmailWindow.classList.add('bmail-window-open');
     });
@@ -925,6 +1179,9 @@
       var h = Math.floor(gameHoursRemaining);
       var m = Math.floor((gameHoursRemaining - h) * 60);
       deadlineEl.textContent = h + 'h ' + (m < 10 ? '0' : '') + m + 'm';
+      if (gameHoursRemaining <= 0 && !state.deadlineExpired && !state.consequenceShown && state.started && !state.filesDecrypted) {
+        showDeadlineExpiredPopup();
+      }
     } else if (deadlineEl) {
       deadlineEl.textContent = '72h 00m';
     }
@@ -997,8 +1254,11 @@
       state.ransomBtcAmount = data.trackerRansomBtc;
     }
     if (typeof data.trackerDeadlineHours === 'number' && data.trackerDeadlineHours > 0 && data.trackerDeadlineHours <= 168) {
+      var deadlineChanged = state.ransomDeadlineGameHours !== data.trackerDeadlineHours;
       state.ransomDeadlineGameHours = data.trackerDeadlineHours;
-      if (state.ransomDeadlineStartRealTime == null) state.ransomDeadlineStartRealTime = Date.now();
+      if (state.ransomDeadlineStartRealTime == null || deadlineChanged) {
+        state.ransomDeadlineStartRealTime = Date.now();
+      }
     }
     updateRansomTrackerDisplay();
   }
@@ -1163,6 +1423,7 @@
         negotiationStartTime: state.negotiationStartTime,
         proofOfStolenDataEmailSent: !!state.proofOfStolenDataEmailSent,
         proofOfDecryptionEmailSent: !!state.proofOfDecryptionEmailSent,
+        chatMessages: state.chatMessages,
       }),
     })
       .then(function (res) {
@@ -1243,6 +1504,8 @@
     state.bankTransactions = [];
     state.proofOfStolenDataEmailSent = false;
     state.proofOfDecryptionEmailSent = false;
+    state.deadlineExpired = false;
+    state.consequenceShown = false;
     updateBankBalanceDisplay();
     var walletIcon = $('#wallet-icon');
     if (walletIcon) walletIcon.removeAttribute('hidden');
@@ -1507,6 +1770,8 @@
       state.bmailEmails = [];
       state.filesDecrypted = false;
       state.decryptorAgreed = false;
+      state.deadlineExpired = false;
+      state.consequenceShown = false;
       state.proofOfStolenDataEmailSent = false;
       state.proofOfDecryptionEmailSent = false;
       state.bankBalance = 7500000;
@@ -1550,6 +1815,7 @@
     if (win) {
       win.classList.remove('leaderboard-window-open');
       win.setAttribute('hidden', 'true');
+      removeFromTaskbar('leaderboard-window');
     }
   }
 
@@ -1557,6 +1823,8 @@
     var win = document.getElementById('leaderboard-window');
     if (!win) return;
     win.removeAttribute('hidden');
+    addToTaskbar('leaderboard-window');
+    bringWindowToFront('leaderboard-window');
     requestAnimationFrame(function () {
       win.classList.add('leaderboard-window-open');
     });
@@ -1703,26 +1971,7 @@
 
   function init() {
     var loginScreen = document.getElementById('login-screen');
-    var username = null;
-    try { username = localStorage.getItem(SESSION_STORAGE_KEY); } catch (e) {}
-    var savedJson = null;
-    if (username) {
-      try { savedJson = localStorage.getItem(getStateKey(username)); } catch (e) {}
-    }
-    if (username && savedJson) {
-      try {
-        var parsed = JSON.parse(savedJson);
-        if (parsed && (parsed.started != null || parsed.phase != null)) {
-          state.sessionUsername = username;
-          loadStateFromSaved(parsed);
-          applyRestoredStateUI();
-          if (loginScreen) loginScreen.setAttribute('hidden', 'true');
-        }
-      } catch (e) {}
-    }
-    if (state.sessionUsername && loginScreen) {
-      loginScreen.setAttribute('hidden', 'true');
-    }
+    if (loginScreen) loginScreen.removeAttribute('hidden');
 
     var gameWindowEl = document.getElementById('game-window');
     if (gameWindowEl) gameWindowEl.setAttribute('hidden', 'true');
@@ -1741,6 +1990,8 @@
         e.stopPropagation();
         readmeIcon.classList.remove('attention');
         readmeWindow.removeAttribute('hidden');
+        addToTaskbar('readme-window');
+        bringWindowToFront('readme-window');
         requestAnimationFrame(function () {
           readmeWindow.classList.add('readme-window-open');
           onReadmeOpened();
@@ -1754,6 +2005,7 @@
         e.stopPropagation();
         readmeWindow.classList.remove('readme-window-open');
         readmeWindow.setAttribute('hidden', 'true');
+        removeFromTaskbar('readme-window');
         var gw = $('#game-window');
         if (gw) gw.setAttribute('hidden', 'true');
       });
@@ -1786,8 +2038,9 @@
       walletIcon.addEventListener('click', function (e) {
         e.preventDefault();
         e.stopPropagation();
-        closeAllAppWindows();
         walletWindow.removeAttribute('hidden');
+        addToTaskbar('wallet-window');
+        bringWindowToFront('wallet-window');
         requestAnimationFrame(function () {
           walletWindow.classList.add('wallet-window-open');
         });
@@ -1803,6 +2056,7 @@
         e.stopPropagation();
         walletWindow.classList.remove('wallet-window-open');
         walletWindow.setAttribute('hidden', 'true');
+        removeFromTaskbar('wallet-window');
         stopWalletPriceRefresh();
       });
     }
@@ -1814,8 +2068,9 @@
       bankIcon.addEventListener('click', function (e) {
         e.preventDefault();
         e.stopPropagation();
-        closeAllAppWindows();
         bankWindow.removeAttribute('hidden');
+        addToTaskbar('bank-window');
+        bringWindowToFront('bank-window');
         requestAnimationFrame(function () {
           bankWindow.classList.add('bank-window-open');
         });
@@ -1828,6 +2083,7 @@
         e.stopPropagation();
         bankWindow.classList.remove('bank-window-open');
         bankWindow.setAttribute('hidden', 'true');
+        removeFromTaskbar('bank-window');
       });
     }
 
@@ -2303,6 +2559,7 @@
           negotiationStartTime: state.negotiationStartTime,
           proofOfStolenDataEmailSent: !!state.proofOfStolenDataEmailSent,
           proofOfDecryptionEmailSent: !!state.proofOfDecryptionEmailSent,
+          chatMessages: state.chatMessages,
         }),
       })
         .then(function(res) {
@@ -2433,8 +2690,9 @@
       torIcon.addEventListener('click', function (e) {
         e.preventDefault();
         e.stopPropagation();
-        closeAllAppWindows();
         torWindow.removeAttribute('hidden');
+        addToTaskbar('tor-window');
+        bringWindowToFront('tor-window');
         requestAnimationFrame(function () {
           torWindow.classList.add('tor-window-open');
           updateTorNavButtons();
@@ -2448,6 +2706,7 @@
         e.stopPropagation();
         torWindow.classList.remove('tor-window-open');
         torWindow.setAttribute('hidden', 'true');
+        removeFromTaskbar('tor-window');
       });
     }
 
@@ -2495,8 +2754,9 @@
         e.preventDefault();
         e.stopPropagation();
         var onionUrl = state.ransomOnionAddress ? 'http://' + state.ransomOnionAddress : 'http://example.onion';
-        closeAllAppWindows();
         torWindow.removeAttribute('hidden');
+        addToTaskbar('tor-window');
+        bringWindowToFront('tor-window');
         requestAnimationFrame(function () {
           torWindow.classList.add('tor-window-open');
           if (torUrlBar) torUrlBar.value = onionUrl;
@@ -2845,9 +3105,10 @@
     var bmailIcon = document.getElementById('bmail-icon');
 
     function openBmailWindow() {
-      closeAllAppWindows();
       if (!bmailWindow) return;
       bmailWindow.removeAttribute('hidden');
+      addToTaskbar('bmail-window');
+      bringWindowToFront('bmail-window');
       requestAnimationFrame(function () {
         bmailWindow.classList.add('bmail-window-open');
       });
@@ -2869,6 +3130,7 @@
         e.stopPropagation();
         bmailWindow.classList.remove('bmail-window-open');
         bmailWindow.setAttribute('hidden', 'true');
+        removeFromTaskbar('bmail-window');
       });
     }
 
@@ -2907,6 +3169,12 @@
 
     var desktopWindows = document.getElementById('desktop-windows');
     if (desktopWindows) {
+      desktopWindows.addEventListener('mousedown', function (e) {
+        var win = e.target && e.target.closest && e.target.closest('[id$="-window"]');
+        if (win && win.id && TASKBAR_WINDOWS[win.id]) {
+          bringWindowToFront(win.id);
+        }
+      });
       desktopWindows.addEventListener('click', function (e) {
         var closeBtn = e.target && e.target.closest && e.target.closest('.fake-app-window-close');
         if (!closeBtn) return;
@@ -3249,6 +3517,7 @@
         startMenu.setAttribute('aria-hidden', 'true');
         state.sessionUsername = null;
         closeAllAppWindows();
+        clearTaskbar();
         var gw = $('#game-window');
         if (gw) gw.setAttribute('hidden', 'true');
         var loginScreen = document.getElementById('login-screen');
@@ -3279,6 +3548,7 @@
           state.torChatStarted = false;
           if (torContent) renderTorStartPage();
           closeAllAppWindows();
+          clearTaskbar();
           var gw = $('#game-window');
           if (gw) gw.setAttribute('hidden', 'true');
           var loginScreen = document.getElementById('login-screen');

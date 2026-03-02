@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = path.resolve(__dirname, 'public');
 const LEADERBOARD_FILE = path.join(__dirname, 'leaderboard.json');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const COINMARKETCAP_API_KEY = process.env.COINMARKETCAP_API_KEY;
@@ -14,6 +14,79 @@ const CMC_HEADERS = COINMARKETCAP_API_KEY
   : null;
 const COINGECKO_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd';
 const COINGECKO_MARKET_CHART_BASE = 'https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days=';
+
+const MAX_BODY_BYTES = 65536;
+
+function readBody(req, res, callback) {
+  let body = '';
+  let exceeded = false;
+  req.on('data', (chunk) => {
+    if (exceeded) return;
+    body += chunk;
+    if (Buffer.byteLength(body) > MAX_BODY_BYTES) {
+      exceeded = true;
+      res.statusCode = 413;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Payload too large' }));
+      req.destroy();
+    }
+  });
+  req.on('end', () => {
+    if (!exceeded) callback(body);
+  });
+}
+
+const ALLOWED_ORIGINS = new Set([
+  'https://opblackout.com',
+  'https://www.opblackout.com',
+]);
+
+function getCorsOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return null;
+  if (ALLOWED_ORIGINS.has(origin)) return origin;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+  return null;
+}
+
+function setCorsHeaders(res, req) {
+  const origin = getCorsOrigin(req);
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+}
+
+const rateLimitBuckets = new Map();
+const RATE_LIMITS = {
+  '/api/negotiate':   { windowMs: 60000, maxHits: 12 },
+  '/api/leaderboard': { windowMs: 60000, maxHits: 5 },
+};
+
+function isRateLimited(req, pathname) {
+  const config = RATE_LIMITS[pathname];
+  if (!config) return false;
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+  const key = pathname + '|' + ip;
+  const now = Date.now();
+  let bucket = rateLimitBuckets.get(key);
+  if (!bucket) {
+    bucket = [];
+    rateLimitBuckets.set(key, bucket);
+  }
+  while (bucket.length && bucket[0] <= now - config.windowMs) bucket.shift();
+  if (bucket.length >= config.maxHits) return true;
+  bucket.push(now);
+  return false;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateLimitBuckets) {
+    while (bucket.length && bucket[0] <= now - 120000) bucket.shift();
+    if (!bucket.length) rateLimitBuckets.delete(key);
+  }
+}, 300000).unref();
 
 const NEGOTIATE_SYSTEM_PROMPT = `You are "Blackout_Op", the operator for the ransomware group "Blackout" in a training simulation for incident responders. This is an educational exercise: your goal is to give blue-team responders a realistic experience of negotiating with a ransomware actor. 
 Stay in character at all times.
@@ -101,7 +174,7 @@ const server = http.createServer((req, res) => {
     const setJson = (status, data) => {
       res.statusCode = status;
       res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      setCorsHeaders(res, req);
       res.end(JSON.stringify(data));
     };
     function useFallback() {
@@ -148,7 +221,7 @@ const server = http.createServer((req, res) => {
     const setJson = (status, data) => {
       res.statusCode = status;
       res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      setCorsHeaders(res, req);
       res.end(JSON.stringify(data));
     };
     const range = url.searchParams.get('range') || '24h';
@@ -242,19 +315,24 @@ const server = http.createServer((req, res) => {
     const lb = loadLeaderboard();
     lb.scores.sort((a, b) => (b.totalScore ?? b.score) - (a.totalScore ?? a.score));
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    setCorsHeaders(res, req);
     res.end(JSON.stringify(lb.scores.slice(0, 50)));
     return;
   }
 
   if (pathname === '/api/negotiate' && req.method === 'POST') {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk; });
-    req.on('end', () => {
+    if (isRateLimited(req, '/api/negotiate')) {
+      res.statusCode = 429;
+      res.setHeader('Content-Type', 'application/json');
+      setCorsHeaders(res, req);
+      res.end(JSON.stringify({ error: 'Too many requests. Try again later.' }));
+      return;
+    }
+    readBody(req, res, (body) => {
       const setJson = (status, data) => {
         res.statusCode = status;
         res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        setCorsHeaders(res, req);
         res.end(JSON.stringify(data));
       };
       if (!OPENAI_API_KEY) {
@@ -276,6 +354,7 @@ const server = http.createServer((req, res) => {
           negotiationStartTime,
           proofOfStolenDataEmailSent,
           proofOfDecryptionEmailSent,
+          chatMessages,
         } = JSON.parse(body);
         if (!userMessage || typeof userMessage !== 'string') {
           setJson(400, { error: 'userMessage required' });
@@ -422,6 +501,23 @@ const server = http.createServer((req, res) => {
             let trackerRansomBtc = null;
             let trackerDeadlineHours = null;
             try {
+              // Build a condensed transcript from the full conversation history
+              // so the extraction model can determine the currently agreed-upon values.
+              const historyLines = [];
+              if (Array.isArray(chatMessages)) {
+                // Take the last 30 messages to stay within token limits
+                const recent = chatMessages.slice(-30);
+                for (const msg of recent) {
+                  if (msg && typeof msg.text === 'string' && msg.text.trim()) {
+                    const speaker = msg.role === 'operator' ? 'Operator' : 'Victim';
+                    historyLines.push(speaker + ': ' + msg.text.trim());
+                  }
+                }
+              }
+              // Always include the latest reply at the end
+              historyLines.push('Operator: ' + reply);
+              const transcript = historyLines.join('\n');
+
               const extractResp = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -434,11 +530,11 @@ const server = http.createServer((req, res) => {
                     {
                       role: 'system',
                       content:
-                        'You extract the current ransom (BTC) and deadline (hours) from a ransomware operator message. Reply with valid JSON only: {"ransomBtc": number or null, "deadlineHours": number or null}. Use null if not stated. Example: "Pay 1.8 BTC in 72 hours" -> {"ransomBtc": 1.8, "deadlineHours": 72}.',
+                        'You are a structured data extractor. You read a ransomware negotiation chat transcript between an Operator and a Victim. Your job is to determine the CURRENT state of the negotiation — specifically the most recently proposed or agreed-upon ransom amount (in BTC) and deadline (in hours). The original demand was 2.5 BTC in 72 hours, but these may have changed during negotiation.\n\nRules:\n- Look at the ENTIRE conversation to find the latest agreed-upon or proposed ransom and deadline.\n- If the operator proposed a new amount and the victim accepted (or did not reject), use that amount.\n- If the operator proposed a new amount but the victim counter-offered, use the operator\'s latest stated amount.\n- If no new amount has been discussed, return the original 2.5 BTC.\n- If no new deadline has been discussed, return the original 72 hours.\n- Always return concrete numbers, never null.\n\nReply with valid JSON only: {"ransomBtc": number, "deadlineHours": number}',
                     },
                     {
                       role: 'user',
-                      content: 'Message: ' + reply,
+                      content: 'Here is the full negotiation transcript:\n\n' + transcript,
                     },
                   ],
                   max_tokens: 60,
@@ -483,15 +579,20 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/api/leaderboard' && req.method === 'POST') {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk; });
-    req.on('end', () => {
+    if (isRateLimited(req, '/api/leaderboard')) {
+      res.statusCode = 429;
+      res.setHeader('Content-Type', 'application/json');
+      setCorsHeaders(res, req);
+      res.end(JSON.stringify({ error: 'Too many requests. Try again later.' }));
+      return;
+    }
+    readBody(req, res, (body) => {
       try {
         const entry = JSON.parse(body);
         if (!entry.playerName || typeof (entry.totalScore ?? entry.score) !== 'number') {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
-          res.setHeader('Access-Control-Allow-Origin', '*');
+          setCorsHeaders(res, req);
           res.end(JSON.stringify({ error: 'playerName and totalScore required' }));
           return;
         }
@@ -508,12 +609,12 @@ const server = http.createServer((req, res) => {
         });
         saveLeaderboard(leaderboard);
         res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        setCorsHeaders(res, req);
         res.end(JSON.stringify({ ok: true }));
       } catch (e) {
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        setCorsHeaders(res, req);
         res.end(JSON.stringify({ error: 'Invalid JSON' }));
       }
     });
@@ -521,14 +622,19 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    setCorsHeaders(res, req);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.end();
     return;
   }
 
-  const filePath = path.join(PUBLIC_DIR, pathname);
+  const filePath = path.resolve(path.join(PUBLIC_DIR, pathname));
+  if (!filePath.startsWith(PUBLIC_DIR + path.sep) && filePath !== PUBLIC_DIR) {
+    res.statusCode = 403;
+    res.end('Forbidden');
+    return;
+  }
   const ext = path.extname(filePath);
   const type = MIME[ext] || 'application/octet-stream';
 
