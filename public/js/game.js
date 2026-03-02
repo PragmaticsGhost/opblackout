@@ -2395,10 +2395,9 @@
           appendChatMessageInTor('operator', reply);
           if (result.ok && (result.data.trackerRansomBtc != null || result.data.trackerDeadlineHours != null)) {
             applyTrackerFromApi(result.data);
-          } else {
-            parseOperatorReplyForRansom(reply);
-            updateRansomTrackerDisplay();
           }
+          parseOperatorReplyForRansom(reply);
+          updateRansomTrackerDisplay();
           if (!state.decryptorAgreed && result.ok && result.data.decryptorAgreed === true) {
             state.decryptorAgreed = true;
             addBmailEmail(

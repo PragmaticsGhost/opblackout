@@ -567,7 +567,7 @@ const server = http.createServer((req, res) => {
                     {
                       role: 'system',
                       content:
-                        'You are a structured data extractor. You read a ransomware negotiation chat transcript between an Operator and a Victim. Your job is to determine the CURRENT state of the negotiation — specifically the most recently proposed or agreed-upon ransom amount (in BTC) and deadline (in hours). The original demand was 2.5 BTC in 72 hours, but these may have changed during negotiation.\n\nRules:\n- Look at the ENTIRE conversation to find the latest agreed-upon or proposed ransom and deadline.\n- If the operator proposed a new amount and the victim accepted (or did not reject), use that amount.\n- If the operator proposed a new amount but the victim counter-offered, use the operator\'s latest stated amount.\n- If no new amount has been discussed, return the original 2.5 BTC.\n- If no new deadline has been discussed, return the original 72 hours.\n- Always return concrete numbers, never null.\n\nReply with valid JSON only: {"ransomBtc": number, "deadlineHours": number}',
+                        'You are a structured data extractor. You read a ransomware negotiation chat transcript between an Operator and a Victim. Your job is to determine the CURRENT ransom demand and deadline based on the Operator\'s most recent statement.\n\nThe original demand was 2.5 BTC in 72 hours, but these may have changed during negotiation.\n\nRules:\n- Always use the Operator\'s LAST stated BTC amount, even if the Victim has not accepted it yet.\n- Always use the Operator\'s LAST stated deadline, even if the Victim has not accepted it yet.\n- If the Operator raised the ransom (e.g. due to frustration, stalling, or threats), use the new higher amount.\n- If the Operator lowered the ransom as a concession, use the new lower amount.\n- If the Operator has not mentioned a specific BTC amount in the conversation, return the original 2.5 BTC.\n- If the Operator has not mentioned a specific deadline in the conversation, return the original 72 hours.\n- Always return concrete numbers, never null.\n\nReply with valid JSON only: {"ransomBtc": number, "deadlineHours": number}',
                     },
                     {
                       role: 'user',
@@ -592,8 +592,11 @@ const server = http.createServer((req, res) => {
                   }
                 }
               }
-            } catch (_) {
-              /* non-fatal: client falls back to regex parsing */
+            } catch (extractErr) {
+              console.warn('[tracker-extract] Extraction failed:', extractErr.message || extractErr);
+            }
+            if (trackerRansomBtc != null || trackerDeadlineHours != null) {
+              console.log('[tracker-extract] ransom=%s BTC, deadline=%s hours', trackerRansomBtc, trackerDeadlineHours);
             }
             sendJson(res, req, 200, {
               reply,
