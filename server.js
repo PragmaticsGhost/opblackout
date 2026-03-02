@@ -474,7 +474,7 @@ const server = http.createServer((req, res) => {
                 Authorization: 'Bearer ' + OPENAI_API_KEY,
               },
               body: JSON.stringify({
-                model: 'gpt-4o-mini',
+                model: 'gpt-5',
                 conversation: convId,
                 instructions: NEGOTIATE_SYSTEM_PROMPT,
                 input: userInput,
