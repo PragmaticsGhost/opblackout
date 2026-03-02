@@ -14,12 +14,6 @@
     chatMessages: [],
     conversationId: null,
     flags: {},
-    negotiationScore: 0,
-    quiz1Score: 0,
-    quiz2Score: 0,
-    quiz1Max: 0,
-    quiz2Max: 0,
-    negotiationMax: 0,
     walletBalance: 0,
     ransomPayments: [],
     negotiationStartTime: null,
@@ -31,7 +25,6 @@
     bankBalance: 7500000,
     savingsBalance: 500000,
     bankTransactions: [],
-    torHistoryStack: [],
     torHistoryList: [],
     torHistoryIndex: -1,
     torCurrentPage: 'start',
@@ -207,12 +200,6 @@
       chatMessages: state.chatMessages,
       conversationId: state.conversationId,
       flags: state.flags,
-      negotiationScore: state.negotiationScore,
-      quiz1Score: state.quiz1Score,
-      quiz2Score: state.quiz2Score,
-      quiz1Max: state.quiz1Max,
-      quiz2Max: state.quiz2Max,
-      negotiationMax: state.negotiationMax,
       walletBalance: state.walletBalance,
       ransomPayments: state.ransomPayments,
       negotiationStartTime: state.negotiationStartTime,
@@ -225,7 +212,6 @@
       bankBalance: state.bankBalance,
       savingsBalance: state.savingsBalance,
       bankTransactions: state.bankTransactions,
-      torHistoryStack: state.torHistoryStack,
       torHistoryList: state.torHistoryList,
       torHistoryIndex: state.torHistoryIndex,
       torCurrentPage: state.torCurrentPage,
@@ -263,12 +249,6 @@
     if (Array.isArray(obj.chatMessages)) state.chatMessages = obj.chatMessages;
     if (obj.conversationId != null) state.conversationId = obj.conversationId;
     if (obj.flags && typeof obj.flags === 'object') state.flags = obj.flags;
-    if (typeof obj.negotiationScore === 'number') state.negotiationScore = obj.negotiationScore;
-    if (typeof obj.quiz1Score === 'number') state.quiz1Score = obj.quiz1Score;
-    if (typeof obj.quiz2Score === 'number') state.quiz2Score = obj.quiz2Score;
-    if (typeof obj.quiz1Max === 'number') state.quiz1Max = obj.quiz1Max;
-    if (typeof obj.quiz2Max === 'number') state.quiz2Max = obj.quiz2Max;
-    if (typeof obj.negotiationMax === 'number') state.negotiationMax = obj.negotiationMax;
     if (typeof obj.walletBalance === 'number') state.walletBalance = obj.walletBalance;
     if (Array.isArray(obj.ransomPayments)) state.ransomPayments = obj.ransomPayments;
     if (obj.negotiationStartTime != null) state.negotiationStartTime = obj.negotiationStartTime;
@@ -281,15 +261,9 @@
     if (typeof obj.bankBalance === 'number') state.bankBalance = obj.bankBalance;
     if (typeof obj.savingsBalance === 'number') state.savingsBalance = obj.savingsBalance;
     if (Array.isArray(obj.bankTransactions)) state.bankTransactions = obj.bankTransactions;
-    if (Array.isArray(obj.torHistoryStack)) state.torHistoryStack = obj.torHistoryStack;
     if (Array.isArray(obj.torHistoryList)) state.torHistoryList = obj.torHistoryList;
     if (typeof obj.torHistoryIndex === 'number') state.torHistoryIndex = obj.torHistoryIndex;
     if (obj.torCurrentPage != null) state.torCurrentPage = obj.torCurrentPage;
-    if (Array.isArray(obj.torHistoryStack) && obj.torHistoryStack.length > 0 && (!Array.isArray(obj.torHistoryList) || obj.torHistoryList.length === 0)) {
-      state.torHistoryList = obj.torHistoryStack.slice();
-      state.torHistoryList.push(obj.torCurrentPage || 'start');
-      state.torHistoryIndex = state.torHistoryList.length - 1;
-    }
     if (typeof obj.ransomBtcAmount === 'number') state.ransomBtcAmount = obj.ransomBtcAmount;
     // Ransom timer and "first open" tracker are not restored — each session gets a fresh 72h countdown and tracker opens on first README open
     state.ransomDeadlineStartRealTime = null;
@@ -613,7 +587,6 @@
       clearInterval(state.ransomTrackerTickId);
       state.ransomTrackerTickId = null;
     }
-    var ransomAmt = state.ransomBtcAmount != null ? Number(state.ransomBtcAmount).toFixed(2) : '2.50';
     showConsequencePopup('leak',
       '<span class="consequence-icon">&#9888;&#65039;</span>' +
       '<h2>Deadline Expired — Data Leaked</h2>' +
@@ -650,7 +623,6 @@
   }
 
   function showDecryptionSuccessPopup() {
-    var ransomAmt = state.ransomBtcAmount != null ? Number(state.ransomBtcAmount).toFixed(2) : '2.50';
     var totalPaid = 0;
     state.ransomPayments.forEach(function (p) { totalPaid += p.amount; });
     var paidStr = totalPaid.toFixed(2);
@@ -690,19 +662,108 @@
     );
   }
 
-  function triggerPlayAgain() {
-    var loginScreen = document.getElementById('login-screen');
-    if (loginScreen) loginScreen.removeAttribute('hidden');
+  function resetFullGameState() {
+    try {
+      if (state.sessionUsername) localStorage.removeItem(getStateKey(state.sessionUsername));
+    } catch (e) {}
+
+    if (state.ransomTrackerTickId != null) {
+      clearInterval(state.ransomTrackerTickId);
+      state.ransomTrackerTickId = null;
+    }
+    if (state.bmailPopupTimeout) {
+      clearTimeout(state.bmailPopupTimeout);
+      state.bmailPopupTimeout = null;
+    }
+    if (state.bankBillPayTimeout) {
+      clearTimeout(state.bankBillPayTimeout);
+      state.bankBillPayTimeout = null;
+    }
+
+    state.started = false;
+    state.phase = 'intro';
+    state.negPhase = 0;
+    state.negStep = 0;
+    state.quizPhase = 0;
+    state.quizIndex = 0;
+    state.chatMessages = [];
+    state.conversationId = null;
+    state.flags = {};
+    state.outcomeScore = null;
+    state.assessmentScore = null;
+    state.walletBalance = 0;
+    state.ransomPayments = [];
+    state.negotiationStartTime = null;
+    state.btcPriceUsd = null;
+    state.totalBtcPurchased = 0;
+    state.bmailEmails = [];
+    state.filesDecrypted = false;
+    state.decryptorAgreed = false;
+    state.bankBalance = 7500000;
+    state.savingsBalance = 500000;
+    state.bankTransactions = [];
+    state.proofOfStolenDataEmailSent = false;
+    state.proofOfDecryptionEmailSent = false;
+    state.deadlineExpired = false;
+    state.consequenceShown = false;
+    state.ransomBtcAmount = 2.5;
+    state.ransomDeadlineStartRealTime = null;
+    state.ransomDeadlineGameHours = 72;
+    state.ransomTrackerShownOnFirstReadme = false;
+    state.torCurrentPage = 'start';
+    state.torHistoryList = [];
+    state.torHistoryIndex = -1;
+
+    renderBmailInbox();
+
+    var bmailPopup = $('#bmail-new-message-popup');
+    if (bmailPopup) bmailPopup.setAttribute('hidden', 'true');
+
+    var quizOverlay = $('#quiz-overlay');
+    if (quizOverlay) quizOverlay.setAttribute('hidden', 'true');
+    var consequenceOverlay = $('#consequence-overlay');
+    if (consequenceOverlay) consequenceOverlay.setAttribute('hidden', 'true');
+
+    var ransomTrackerWindow = $('#ransom-tracker-window');
+    if (ransomTrackerWindow) {
+      ransomTrackerWindow.setAttribute('hidden', 'true');
+      ransomTrackerWindow.classList.remove('ransom-tracker-open');
+    }
+
+    var resultsContent = $('#results-content');
+    if (resultsContent) resultsContent.innerHTML = '';
+
     closeAllAppWindows();
     clearTaskbar();
+
     var gw = $('#game-window');
     if (gw) gw.setAttribute('hidden', 'true');
-    var readmeWindow = document.getElementById('readme-window');
-    if (readmeWindow) {
-      readmeWindow.classList.remove('readme-window-open');
-      readmeWindow.setAttribute('hidden', 'true');
+    var readmeIcon = $('#readme-icon');
+    if (readmeIcon) {
+      readmeIcon.removeAttribute('hidden');
+      readmeIcon.classList.remove('readme-icon-hidden');
     }
-    removeFromTaskbar('readme-window');
+    var readmeWindow = $('#readme-window');
+    if (readmeWindow) {
+      readmeWindow.setAttribute('hidden', 'true');
+      readmeWindow.classList.remove('readme-window-open');
+    }
+
+    renderDesktopFakeFiles();
+    updateBankBalanceDisplay();
+    updateWalletBalanceDisplay();
+
+    var desktopContent = document.querySelector('.desktop-content');
+    if (desktopContent) desktopContent.classList.remove('game-started');
+    $$('[data-view]').forEach(function (v) { v.classList.remove('active'); });
+
+    saveState();
+  }
+
+  function triggerPlayAgain() {
+    resetFullGameState();
+    var loginScreen = document.getElementById('login-screen');
+    if (loginScreen) loginScreen.removeAttribute('hidden');
   }
 
   /* ---- End consequence popups ---- */
@@ -1124,28 +1185,6 @@
     }
   }
 
-  function appendChatMessage(role, text) {
-    state.chatMessages.push({
-      role,
-      text,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    });
-    const container = $('#chat-panel-messages');
-    if (!container) return;
-    const msg = document.createElement('div');
-    msg.className = 'chat-msg chat-msg-' + role;
-    msg.innerHTML =
-      '<span class="chat-sender">' +
-      escapeHtml(role === 'operator' ? 'Blackout_Op' : 'You') +
-      '</span><span class="chat-time">' +
-      escapeHtml(state.chatMessages[state.chatMessages.length - 1].time) +
-      '</span><div class="chat-text">' +
-      escapeHtml(text) +
-      '</div>';
-    container.appendChild(msg);
-    container.scrollTop = container.scrollHeight;
-  }
-
   function appendChatMessageInTor(role, text) {
     state.chatMessages.push({
       role,
@@ -1211,7 +1250,7 @@
   function onReadmeOpened() {
     if (!state.started) startGame();
     if (!state.ransomTrackerShownOnFirstReadme) {
-      state.ransomBtcAmount = typeof RANSOM_BTC_AMOUNT === 'number' ? RANSOM_BTC_AMOUNT : 2.5;
+      state.ransomBtcAmount = typeof INITIAL_RANSOM_BTC === 'number' ? INITIAL_RANSOM_BTC : 2.5;
       state.ransomDeadlineGameHours = typeof INITIAL_DEADLINE_HOURS === 'number' ? INITIAL_DEADLINE_HOURS : 72;
       state.ransomDeadlineStartRealTime = Date.now();
       openRansomTracker();
@@ -1375,108 +1414,6 @@
       renderTorChatSuggestions();
     }
     nextStep(!!skipFirstMessage);
-  }
-
-  function sendNegotiationMessage(userText) {
-    var phaseNum = state.negPhaseNum;
-    var phaseSteps = state.negPhaseSteps;
-    var callback = state.negotiationSendCallback;
-    if (!phaseNum || !phaseSteps || state.negStep >= phaseSteps.length || !callback) return;
-    var inputEl = $('#chat-panel-input');
-    var sendBtn = $('#chat-panel-send');
-    if (inputEl) inputEl.disabled = true;
-    if (sendBtn) sendBtn.disabled = true;
-    appendChatMessage('user', userText);
-    setFlagsFromMessage(userText);
-    var messagesContainer = $('#chat-panel-messages');
-    var loadingEl = document.createElement('p');
-    loadingEl.className = 'chat-loading';
-    loadingEl.textContent = 'Blackout_Op is typing…';
-    loadingEl.setAttribute('data-loading', '1');
-    var typingDelayMs = 300 + Math.random() * 3700;
-    var typingTimeout = setTimeout(function () {
-      if (loadingEl.parentNode) return;
-      if (messagesContainer) {
-        messagesContainer.appendChild(loadingEl);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
-      }
-    }, typingDelayMs);
-    if (!state.negotiationStartTime) state.negotiationStartTime = Date.now();
-    var lastPayment = state.ransomPayments.length > 0 ? state.ransomPayments[state.ransomPayments.length - 1] : null;
-    var paymentMade = lastPayment != null;
-    var lastPaymentAmount = lastPayment ? lastPayment.amount : 0;
-    var paymentCorrect = paymentMade && typeof RANSOM_BTC_AMOUNT !== 'undefined' && lastPaymentAmount >= RANSOM_BTC_AMOUNT;
-    var step = phaseSteps[state.negStep];
-    var initialOperatorMessage = (!state.conversationId && step && step.operatorMessage) ? step.operatorMessage : null;
-      fetch(API_BASE + '/api/negotiate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        phase: phaseNum,
-        stepIndex: state.negStep,
-        userMessage: userText,
-        conversationId: state.conversationId,
-        initialOperatorMessage: initialOperatorMessage,
-        paymentMade: paymentMade,
-        lastPaymentAmount: lastPaymentAmount,
-        paymentCorrect: paymentCorrect,
-        negotiationStartTime: state.negotiationStartTime,
-        proofOfStolenDataEmailSent: !!state.proofOfStolenDataEmailSent,
-        proofOfDecryptionEmailSent: !!state.proofOfDecryptionEmailSent,
-        chatMessages: state.chatMessages,
-      }),
-    })
-      .then(function (res) {
-        return res.json().then(function (data) {
-          return { ok: res.ok, data: data };
-        });
-      })
-      .then(function (result) {
-        if (result.ok && result.data.conversationId) {
-          state.conversationId = result.data.conversationId;
-        }
-        var reply;
-        if (result.ok && result.data.reply) {
-          reply = result.data.reply;
-        } else if (result.data && result.data.error) {
-          reply = 'Error: ' + result.data.error;
-        } else {
-          reply = 'No response.';
-        }
-        appendChatMessage('operator', reply);
-        if (result.ok && (result.data.trackerRansomBtc != null || result.data.trackerDeadlineHours != null)) {
-          applyTrackerFromApi(result.data);
-        } else {
-          parseOperatorReplyForRansom(reply);
-          updateRansomTrackerDisplay();
-        }
-        if (!state.decryptorAgreed && result.ok && result.data.decryptorAgreed === true) {
-          state.decryptorAgreed = true;
-          addBmailEmail(
-            'Your decryptor is ready',
-            'Payment confirmed. Your decryptor is ready.\n\nClick the link below to download and run the decryption tool. It will restore your encrypted files.\n\n— Blackout_Op',
-            'Blackout_Op <noreply@blackout.onion>',
-            true
-          );
-          showBmailNewMessagePopup();
-        }
-        state.negStep += 1;
-        callback();
-      })
-      .catch(function () {
-        appendChatMessage('operator', 'Connection error. Try again.');
-        state.negStep += 1;
-        callback();
-      })
-      .finally(function () {
-        clearTimeout(typingTimeout);
-        if (loadingEl && loadingEl.parentNode) loadingEl.remove();
-        if (inputEl) {
-          inputEl.disabled = false;
-          inputEl.value = '';
-        }
-        if (sendBtn) sendBtn.disabled = false;
-      });
   }
 
   function startGame() {
@@ -1732,77 +1669,7 @@
     });
 
     container.querySelector('[data-action="play-again"]').addEventListener('click', function () {
-      try {
-        if (state.sessionUsername) localStorage.removeItem(getStateKey(state.sessionUsername));
-      } catch (e) {}
-      state.started = false;
-      state.phase = 'intro';
-      state.ransomTrackerShownOnFirstReadme = false;
-      state.chatMessages = [];
-      state.flags = {};
-      $('#chat-panel').setAttribute('hidden', 'true');
-      $('#chat-panel-messages').innerHTML = '';
-      var inp = $('#chat-panel-input');
-      if (inp) inp.value = '';
-      $('#game-window').setAttribute('hidden', 'true');
-      var readmeIcon = $('#readme-icon');
-      var readmeWindow = $('#readme-window');
-      if (readmeIcon) {
-        readmeIcon.removeAttribute('hidden');
-        readmeIcon.classList.remove('readme-icon-hidden');
-      }
-      if (readmeWindow) {
-        readmeWindow.setAttribute('hidden', 'true');
-        readmeWindow.classList.remove('readme-window-open');
-      }
-      var walletIcon = $('#wallet-icon');
-      var walletWindow = $('#wallet-window');
-      if (walletIcon) walletIcon.removeAttribute('hidden');
-      if (walletWindow) {
-        walletWindow.setAttribute('hidden', 'true');
-        walletWindow.classList.remove('wallet-window-open');
-      }
-      state.walletBalance = 0;
-      state.ransomPayments = [];
-      state.negotiationStartTime = null;
-      state.btcPriceUsd = null;
-      state.totalBtcPurchased = 0;
-      state.bmailEmails = [];
-      state.filesDecrypted = false;
-      state.decryptorAgreed = false;
-      state.deadlineExpired = false;
-      state.consequenceShown = false;
-      state.proofOfStolenDataEmailSent = false;
-      state.proofOfDecryptionEmailSent = false;
-      state.bankBalance = 7500000;
-      state.savingsBalance = 500000;
-      state.bankTransactions = [];
-      var bankWindowEl = $('#bank-window');
-      if (bankWindowEl) {
-        bankWindowEl.setAttribute('hidden', 'true');
-        bankWindowEl.classList.remove('bank-window-open');
-      }
-      if (state.bmailPopupTimeout) clearTimeout(state.bmailPopupTimeout);
-      var bmailPopup = $('#bmail-new-message-popup');
-      if (bmailPopup) bmailPopup.setAttribute('hidden', 'true');
-      var bmailWindow = $('#bmail-window');
-      if (bmailWindow) {
-        bmailWindow.setAttribute('hidden', 'true');
-        bmailWindow.classList.remove('bmail-window-open');
-      }
-      var fileViewerWindow = $('#file-viewer-window');
-      if (fileViewerWindow) {
-        fileViewerWindow.setAttribute('hidden', 'true');
-        fileViewerWindow.classList.remove('file-viewer-open');
-      }
-      renderDesktopFakeFiles();
-      $('#results-content').innerHTML = '';
-      var desktopContent = document.querySelector('.desktop-content');
-      if (desktopContent) desktopContent.classList.remove('game-started');
-      $$('[data-view]').forEach(function (v) {
-        v.classList.remove('active');
-      });
-      saveState();
+      resetFullGameState();
     });
 
     container.querySelector('[data-action="show-leaderboard"]').addEventListener('click', function () {
@@ -1876,60 +1743,6 @@
         '<button type="button" class="leaderboard-window-close-btn" id="leaderboard-window-close-btn">Close</button>';
       var closeBtn = document.getElementById('leaderboard-window-close-btn');
       if (closeBtn) closeBtn.addEventListener('click', closeLeaderboardWindow);
-    }
-  }
-
-  async function loadLeaderboard() {
-    const container = $('#leaderboard-content');
-    if (!container) return;
-    try {
-      const res = await fetch(API_BASE + '/api/leaderboard');
-      const scores = await res.json();
-      var rows = '';
-      if (scores.length === 0) {
-        rows = '<tr><td colspan="5">No scores yet. Be the first!</td></tr>';
-      } else {
-        rows = scores
-          .map(function (s, i) {
-            return (
-              '<tr><td>' +
-              (i + 1) +
-              '</td><td>' +
-              escapeHtml(s.playerName) +
-              '</td><td>' +
-              (s.totalScore != null ? s.totalScore : s.score != null ? s.score : '—') +
-              '</td><td>' +
-              (s.outcomeScore != null ? s.outcomeScore : '—') +
-              '</td><td>' +
-              (s.assessmentScore != null ? s.assessmentScore : '—') +
-              '</td></tr>'
-            );
-          })
-          .join('');
-      }
-      container.innerHTML =
-        '<div class="leaderboard-card">' +
-        '<h2>Leaderboard</h2>' +
-        '<table class="leaderboard-table">' +
-        '<thead><tr><th>Rank</th><th>Player</th><th>Total</th><th>Outcome</th><th>Knowledge</th></tr></thead>' +
-        '<tbody>' +
-        rows +
-        '</tbody></table>' +
-        '<button type="button" class="btn btn-secondary" data-action="back-from-leaderboard">Back to results</button>' +
-        '</div>';
-      container.querySelector('[data-action="back-from-leaderboard"]').addEventListener('click', function () {
-        $$('[data-view]').forEach(function (v) {
-          v.classList.toggle('active', v.dataset.view === 'results');
-        });
-      });
-    } catch (err) {
-      container.innerHTML =
-        '<div class="leaderboard-card"><p>Could not load leaderboard.</p><button type="button" class="btn btn-secondary" data-action="back-from-leaderboard">Back</button></div>';
-      container.querySelector('[data-action="back-from-leaderboard"]').addEventListener('click', function () {
-        $$('[data-view]').forEach(function (v) {
-          v.classList.toggle('active', v.dataset.view === 'results');
-        });
-      });
     }
   }
 
@@ -2252,10 +2065,10 @@
               </div>
               <div class="ransom-site-section">
                 <h3>🔑 How to Recover Your Data</h3>
-                <p><strong>Payment Required:</strong> ${(state.ransomBtcAmount != null ? state.ransomBtcAmount : 2.5)} BTC (<span id="ransom-btc-usd">~$— USD</span> at current rates)</p>
+                <p><strong>Payment Required:</strong> ${escapeHtml(String(state.ransomBtcAmount != null ? state.ransomBtcAmount : 2.5))} BTC (<span id="ransom-btc-usd">~$— USD</span> at current rates)</p>
                 <p><strong>Bitcoin Address:</strong></p>
                 <div class="ransom-site-id-box">
-                  <code style="word-break: break-all; font-size: 0.85rem;">${state.ransomBtcAddress || ''}</code>
+                  <code style="word-break: break-all; font-size: 0.85rem;">${escapeHtml(state.ransomBtcAddress || '')}</code>
                 </div>
                 <p><strong>Time Remaining:</strong> 72 hours from initial encryption</p>
               </div>
@@ -2416,7 +2229,7 @@
             <h2 class="ransom-site-logo-compact">⚡ Blackout</h2>
             <div class="ransom-site-status">
               <span class="ransom-site-status-label">Personal ID:</span>
-              <span class="ransom-site-status-value">${state.personalId || ''}</span>
+              <span class="ransom-site-status-value">${escapeHtml(state.personalId || '')}</span>
             </div>
           </div>
           <div class="ransom-site-chat-container">
@@ -2522,7 +2335,7 @@
       var lastPayment = state.ransomPayments.length > 0 ? state.ransomPayments[state.ransomPayments.length - 1] : null;
       var paymentMade = lastPayment != null;
       var lastPaymentAmount = lastPayment ? lastPayment.amount : 0;
-      var paymentCorrect = paymentMade && typeof RANSOM_BTC_AMOUNT !== 'undefined' && lastPaymentAmount >= RANSOM_BTC_AMOUNT;
+      var paymentCorrect = paymentMade && typeof INITIAL_RANSOM_BTC !== 'undefined' && lastPaymentAmount >= INITIAL_RANSOM_BTC;
       var step = phaseSteps[state.negStep];
       var initialOperatorMessage = (!state.conversationId && step && step.operatorMessage) ? step.operatorMessage : null;
       
@@ -2607,7 +2420,6 @@
               piiEncrypted ? { name: PII_ATTACHMENT_FILENAME, encryptedContent: PII_SPREADSHEET_ENCRYPTED, decryptedContent: PII_SPREADSHEET_DECRYPTED, showDecrypted: false } : undefined
             );
             showBmailNewMessagePopup();
-            appendChatMessageInTor('operator', "One moment — sending that now.\n\nI've sent you an email with a sample of the data. Check your inbox.");
           }
           if (result.ok && result.data.proofOfDecryptionSent === true && !state.proofOfDecryptionEmailSent) {
             state.proofOfDecryptionEmailSent = true;
@@ -2620,7 +2432,6 @@
               piiDecrypted ? { name: PII_ATTACHMENT_FILENAME, encryptedContent: PII_SPREADSHEET_ENCRYPTED, decryptedContent: PII_SPREADSHEET_DECRYPTED, showDecrypted: true } : undefined
             );
             showBmailNewMessagePopup();
-            appendChatMessageInTor('operator', "One moment — sending that now.\n\nI've sent you an email with the decrypted file. Check your inbox.");
           }
           state.negStep += 1;
           saveState();
@@ -2819,8 +2630,6 @@
     var walletPriceDisplay = $('#wallet-price-display');
     var walletPriceMeta = $('#wallet-price-meta');
     var walletPriceBadge = $('#wallet-price-badge');
-
-    var MIN_CHART_POINTS = 5;
 
     function drawBtcChart(canvas, prices) {
       if (!canvas || !Array.isArray(prices) || prices.length < 2) return;
@@ -3444,62 +3253,6 @@
         e.stopPropagation();
       });
     }
-    var chatPanelSend = document.getElementById('chat-panel-send');
-    var chatPanelInput = document.getElementById('chat-panel-input');
-    if (chatPanelSend && chatPanelInput) {
-      chatPanelSend.addEventListener('click', function () {
-        var text = (chatPanelInput.value || '').trim();
-        if (!text) return;
-        sendNegotiationMessage(text);
-      });
-      chatPanelInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-          e.preventDefault();
-          var text = (chatPanelInput.value || '').trim();
-          if (!text) return;
-          sendNegotiationMessage(text);
-        }
-      });
-    }
-    var chatSuggestionsToggle = document.getElementById('chat-suggestions-toggle');
-    var chatSuggestionsDrawer = document.getElementById('chat-suggestions-drawer');
-    var chatPanelEl = document.getElementById('chat-panel');
-    if (chatSuggestionsToggle && chatSuggestionsDrawer) {
-      chatSuggestionsToggle.addEventListener('click', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (chatSuggestionsDrawer.hasAttribute('hidden')) return;
-        var open = chatSuggestionsDrawer.classList.toggle('open');
-        chatSuggestionsToggle.setAttribute('aria-expanded', String(open));
-        if (chatPanelEl) chatPanelEl.classList.toggle('chat-panel-suggestions-open', open);
-      });
-    }
-    var chatPanelOpenTracker = document.getElementById('chat-panel-open-tracker');
-    if (chatPanelOpenTracker) {
-      chatPanelOpenTracker.addEventListener('click', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        openRansomTracker();
-      });
-    }
-    var chatPanel = document.getElementById('chat-panel');
-    var chatPanelToggle = document.getElementById('chat-panel-toggle');
-    if (chatPanel && chatPanelToggle) {
-      chatPanelToggle.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var minimized = chatPanel.classList.toggle('chat-panel-minimized');
-        chatPanelToggle.textContent = minimized ? '\u25A1' : '\u2212';
-        chatPanelToggle.setAttribute('aria-label', minimized ? 'Restore chat' : 'Minimize chat');
-      });
-      chatPanel.querySelector('.chat-panel-header').addEventListener('click', function (e) {
-        if (e.target === chatPanelToggle || chatPanelToggle.contains(e.target)) return;
-        if (chatPanel.classList.contains('chat-panel-minimized')) {
-          chatPanel.classList.remove('chat-panel-minimized');
-          chatPanelToggle.textContent = '\u2212';
-          chatPanelToggle.setAttribute('aria-label', 'Minimize chat');
-        }
-      });
-    }
     var navLb = $('#nav-leaderboard');
     if (navLb) {
       navLb.addEventListener('click', function (e) {
@@ -3541,7 +3294,6 @@
             if (un) localStorage.removeItem(getStateKey(un));
           } catch (e) {}
           state.chatMessages = [];
-          state.torHistoryStack = [];
           state.torHistoryList = [];
           state.torHistoryIndex = -1;
           state.torCurrentPage = 'start';
@@ -3608,9 +3360,20 @@
     }
   }
 
+  function updateTaskbarTime() {
+    var el = document.getElementById('taskbar-time');
+    if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', function () {
+      init();
+      updateTaskbarTime();
+      setInterval(updateTaskbarTime, 1000);
+    });
   } else {
     init();
+    updateTaskbarTime();
+    setInterval(updateTaskbarTime, 1000);
   }
 })();

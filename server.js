@@ -36,6 +36,16 @@ function readBody(req, res, callback) {
   });
 }
 
+const PRICE_API_TIMEOUT_MS = 10000;
+const OPENAI_TIMEOUT_MS = 30000;
+
+function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const merged = Object.assign({}, options, { signal: controller.signal });
+  return fetch(url, merged).finally(() => clearTimeout(timer));
+}
+
 const ALLOWED_ORIGINS = new Set([
   'https://opblackout.com',
   'https://www.opblackout.com',
@@ -57,10 +67,17 @@ function setCorsHeaders(res, req) {
   }
 }
 
+const btcPriceCache = { data: null, ts: 0 };
+const btcHistoryCache = new Map();
+const BTC_PRICE_CACHE_MS = 30000;
+const BTC_HISTORY_CACHE_MS = 60000;
+
 const rateLimitBuckets = new Map();
 const RATE_LIMITS = {
-  '/api/negotiate':   { windowMs: 60000, maxHits: 12 },
-  '/api/leaderboard': { windowMs: 60000, maxHits: 5 },
+  '/api/negotiate':         { windowMs: 60000, maxHits: 12 },
+  '/api/leaderboard':       { windowMs: 60000, maxHits: 5 },
+  '/api/btc-price':         { windowMs: 60000, maxHits: 5 },
+  '/api/btc-price-history': { windowMs: 60000, maxHits: 5 },
 };
 
 function isRateLimited(req, pathname) {
@@ -158,6 +175,17 @@ function saveLeaderboard(leaderboard) {
   fs.writeFileSync(LEADERBOARD_FILE, JSON.stringify(leaderboard, null, 2), 'utf8');
 }
 
+function sendJson(res, req, status, data) {
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json');
+  setCorsHeaders(res, req);
+  res.end(JSON.stringify(data));
+}
+
+function sendRateLimited(res, req) {
+  sendJson(res, req, 429, { error: 'Too many requests. Try again later.' });
+}
+
 const MIME = {
   '.html': 'text/html',
   '.css': 'text/css',
@@ -171,17 +199,24 @@ const server = http.createServer((req, res) => {
   const pathname = url.pathname === '/' ? '/index.html' : url.pathname;
 
   if (pathname === '/api/btc-price' && req.method === 'GET') {
-    const setJson = (status, data) => {
-      res.statusCode = status;
-      res.setHeader('Content-Type', 'application/json');
-      setCorsHeaders(res, req);
-      res.end(JSON.stringify(data));
-    };
+    if (isRateLimited(req, '/api/btc-price')) {
+      sendRateLimited(res, req);
+      return;
+    }
+    if (btcPriceCache.data && Date.now() - btcPriceCache.ts < BTC_PRICE_CACHE_MS) {
+      sendJson(res, req, 200, btcPriceCache.data);
+      return;
+    }
+    function cacheAndSend(data) {
+      btcPriceCache.data = data;
+      btcPriceCache.ts = Date.now();
+      sendJson(res, req, 200, data);
+    }
     function useFallback() {
-      setJson(200, { usd: BTC_PRICE_FALLBACK_USD });
+      cacheAndSend({ usd: BTC_PRICE_FALLBACK_USD });
     }
     function tryCoinGecko() {
-      fetch(COINGECKO_PRICE_URL)
+      fetchWithTimeout(COINGECKO_PRICE_URL, {}, PRICE_API_TIMEOUT_MS)
         .then((r) => {
           if (!r.ok) return null;
           return r.json();
@@ -189,7 +224,7 @@ const server = http.createServer((req, res) => {
         .then((data) => {
           const usd = data?.bitcoin?.usd;
           if (typeof usd === 'number' && usd > 0) {
-            setJson(200, { usd });
+            cacheAndSend({ usd });
           } else {
             useFallback();
           }
@@ -197,7 +232,7 @@ const server = http.createServer((req, res) => {
         .catch(() => useFallback());
     }
     if (CMC_HEADERS) {
-      fetch(CMC_BASE + '/v2/cryptocurrency/quotes/latest?id=1&convert=USD', { headers: CMC_HEADERS })
+      fetchWithTimeout(CMC_BASE + '/v2/cryptocurrency/quotes/latest?id=1&convert=USD', { headers: CMC_HEADERS }, PRICE_API_TIMEOUT_MS)
         .then((r) => {
           if (!r.ok) return { data: null };
           return r.json();
@@ -205,7 +240,7 @@ const server = http.createServer((req, res) => {
         .then((data) => {
           const usd = data?.data?.['1']?.quote?.USD?.price;
           if (typeof usd === 'number' && usd > 0) {
-            setJson(200, { usd });
+            cacheAndSend({ usd });
           } else {
             tryCoinGecko();
           }
@@ -218,21 +253,27 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/api/btc-price-history' && req.method === 'GET') {
-    const setJson = (status, data) => {
-      res.statusCode = status;
-      res.setHeader('Content-Type', 'application/json');
-      setCorsHeaders(res, req);
-      res.end(JSON.stringify(data));
-    };
+    if (isRateLimited(req, '/api/btc-price-history')) {
+      sendRateLimited(res, req);
+      return;
+    }
     const range = url.searchParams.get('range') || '24h';
+    const cached = btcHistoryCache.get(range);
+    if (cached && Date.now() - cached.ts < BTC_HISTORY_CACHE_MS) {
+      sendJson(res, req, 200, cached.data);
+      return;
+    }
+    function cacheHistory(data) {
+      btcHistoryCache.set(range, { data, ts: Date.now() });
+      sendJson(res, req, 200, data);
+    }
     const nowSec = Math.floor(Date.now() / 1000);
     const hours = range === '7d' ? 7 * 24 : range === '24h' ? 24 : range === '12h' ? 12 : 6;
     const fromSec = nowSec - hours * 3600;
 
-    function makeFallback(rangeLabel) {
-      const hrs = rangeLabel === '7d' ? 7 * 24 : rangeLabel === '24h' ? 24 : rangeLabel === '12h' ? 12 : 6;
-      const points = Math.min(48, Math.max(12, hrs * 2));
-      const stepMs = (hrs * 3600000) / (points - 1) || 3600000;
+    function makeFallback() {
+      const points = Math.min(48, Math.max(12, hours * 2));
+      const stepMs = (hours * 3600000) / (points - 1) || 3600000;
       const base = BTC_PRICE_FALLBACK_USD;
       return Array.from({ length: points }, (_, i) => {
         const t = Date.now() - (points - 1 - i) * stepMs;
@@ -243,7 +284,7 @@ const server = http.createServer((req, res) => {
 
     function tryCoinGeckoHistory() {
       const days = range === '7d' ? 7 : 1;
-      fetch(COINGECKO_MARKET_CHART_BASE + days)
+      fetchWithTimeout(COINGECKO_MARKET_CHART_BASE + days, {}, PRICE_API_TIMEOUT_MS)
         .then((r) => {
           if (!r.ok) return null;
           return r.json();
@@ -251,7 +292,7 @@ const server = http.createServer((req, res) => {
         .then((data) => {
           const raw = data?.prices;
           if (!Array.isArray(raw) || raw.length < 5) {
-            setJson(200, { prices: makeFallback(range) });
+            cacheHistory({ prices: makeFallback() });
             return;
           }
           const fromMs = Date.now() - hours * 3600 * 1000;
@@ -260,12 +301,12 @@ const server = http.createServer((req, res) => {
             .map((p) => [p[0], typeof p[1] === 'number' ? Math.round(p[1]) : p[1]])
             .sort((a, b) => a[0] - b[0]);
           if (prices.length >= 5) {
-            setJson(200, { prices });
+            cacheHistory({ prices });
           } else {
-            setJson(200, { prices: makeFallback(range) });
+            cacheHistory({ prices: makeFallback() });
           }
         })
-        .catch(() => setJson(200, { prices: makeFallback(range) }));
+        .catch(() => cacheHistory({ prices: makeFallback() }));
     }
 
     if (!CMC_HEADERS) {
@@ -275,7 +316,7 @@ const server = http.createServer((req, res) => {
 
     const interval = range === '7d' ? 'daily' : 'hourly';
     const cmcUrl = `${CMC_BASE}/v2/cryptocurrency/ohlcv/historical?id=1&time_start=${fromSec}&time_end=${nowSec}&interval=${interval}&convert=USD`;
-    fetch(cmcUrl, { headers: CMC_HEADERS })
+    fetchWithTimeout(cmcUrl, { headers: CMC_HEADERS }, PRICE_API_TIMEOUT_MS)
       .then((r) => {
         if (!r.ok) {
           console.warn('[btc-price-history] CoinMarketCap returned', r.status, r.statusText, 'for range', range);
@@ -295,7 +336,7 @@ const server = http.createServer((req, res) => {
             .filter(Boolean)
             .sort((a, b) => a[0] - b[0]);
           if (prices.length >= 5) {
-            setJson(200, { prices });
+            cacheHistory({ prices });
             return;
           }
         }
@@ -322,28 +363,16 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/negotiate' && req.method === 'POST') {
     if (isRateLimited(req, '/api/negotiate')) {
-      res.statusCode = 429;
-      res.setHeader('Content-Type', 'application/json');
-      setCorsHeaders(res, req);
-      res.end(JSON.stringify({ error: 'Too many requests. Try again later.' }));
+      sendRateLimited(res, req);
       return;
     }
     readBody(req, res, (body) => {
-      const setJson = (status, data) => {
-        res.statusCode = status;
-        res.setHeader('Content-Type', 'application/json');
-        setCorsHeaders(res, req);
-        res.end(JSON.stringify(data));
-      };
       if (!OPENAI_API_KEY) {
-        setJson(503, { error: 'OpenAI API key not configured. Set OPENAI_API_KEY.' });
+        sendJson(res, req, 503, { error: 'OpenAI API key not configured. Set OPENAI_API_KEY.' });
         return;
       }
       try {
         const {
-          phase,
-          stepIndex,
-          totalStepsInPhase,
           gameContext,
           userMessage,
           conversationId,
@@ -357,7 +386,15 @@ const server = http.createServer((req, res) => {
           chatMessages,
         } = JSON.parse(body);
         if (!userMessage || typeof userMessage !== 'string') {
-          setJson(400, { error: 'userMessage required' });
+          sendJson(res, req, 400, { error: 'userMessage required' });
+          return;
+        }
+        if (userMessage.length > 2000) {
+          sendJson(res, req, 400, { error: 'userMessage too long (max 2000 chars)' });
+          return;
+        }
+        if (gameContext && typeof gameContext === 'string' && gameContext.length > 1000) {
+          sendJson(res, req, 400, { error: 'gameContext too long (max 1000 chars)' });
           return;
         }
         let paymentContext = '';
@@ -408,7 +445,7 @@ const server = http.createServer((req, res) => {
                   content: [{ type: 'output_text', text: initialOperatorMessage.trim() }],
                 });
               }
-              const createConv = await fetch('https://api.openai.com/v1/conversations', {
+              const createConv = await fetchWithTimeout('https://api.openai.com/v1/conversations', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -418,19 +455,19 @@ const server = http.createServer((req, res) => {
                   metadata: { game: 'negotiation' },
                   items: initialItems,
                 }),
-              });
+              }, OPENAI_TIMEOUT_MS);
               const convData = await createConv.json();
               if (convData.error) {
-                setJson(502, { error: convData.error.message || 'Failed to create conversation' });
+                sendJson(res, req, 502, { error: convData.error.message || 'Failed to create conversation' });
                 return;
               }
               if (!convData.id) {
-                setJson(502, { error: 'No conversation id returned' });
+                sendJson(res, req, 502, { error: 'No conversation id returned' });
                 return;
               }
               convId = convData.id;
             }
-            const resp = await fetch('https://api.openai.com/v1/responses', {
+            const resp = await fetchWithTimeout('https://api.openai.com/v1/responses', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -445,10 +482,10 @@ const server = http.createServer((req, res) => {
                 temperature: 0.8,
                 store: true,
               }),
-            });
+            }, OPENAI_TIMEOUT_MS);
             const data = await resp.json();
             if (data.error) {
-              setJson(502, { error: data.error.message || 'OpenAI error' });
+              sendJson(res, req, 502, { error: data.error.message || 'OpenAI error' });
               return;
             }
             let reply = null;
@@ -469,7 +506,7 @@ const server = http.createServer((req, res) => {
               }
             }
             if (!reply) {
-              setJson(502, { error: 'No reply from OpenAI. Check API response format.' });
+              sendJson(res, req, 502, { error: 'No reply from OpenAI. Check API response format.' });
               return;
             }
             const DECRYPTOR_TRIGGER_A = 'sending the decryptor tool to your email address now';
@@ -518,7 +555,7 @@ const server = http.createServer((req, res) => {
               historyLines.push('Operator: ' + reply);
               const transcript = historyLines.join('\n');
 
-              const extractResp = await fetch('https://api.openai.com/v1/chat/completions', {
+              const extractResp = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -541,7 +578,7 @@ const server = http.createServer((req, res) => {
                   temperature: 0,
                   response_format: { type: 'json_object' },
                 }),
-              });
+              }, OPENAI_TIMEOUT_MS);
               const extractData = await extractResp.json();
               if (!extractData.error && extractData.choices && extractData.choices[0]) {
                 const text = extractData.choices[0].message?.content;
@@ -558,7 +595,7 @@ const server = http.createServer((req, res) => {
             } catch (_) {
               /* non-fatal: client falls back to regex parsing */
             }
-            setJson(200, {
+            sendJson(res, req, 200, {
               reply,
               conversationId: convId,
               decryptorAgreed,
@@ -568,11 +605,11 @@ const server = http.createServer((req, res) => {
               trackerDeadlineHours: trackerDeadlineHours ?? undefined,
             });
           } catch (e) {
-            setJson(502, { error: e.message || 'OpenAI request failed' });
+            sendJson(res, req, 502, { error: e.message || 'OpenAI request failed' });
           }
         })();
       } catch (e) {
-        setJson(400, { error: 'Invalid JSON or body' });
+        sendJson(res, req, 400, { error: 'Invalid JSON or body' });
       }
     });
     return;
@@ -580,20 +617,14 @@ const server = http.createServer((req, res) => {
 
   if (pathname === '/api/leaderboard' && req.method === 'POST') {
     if (isRateLimited(req, '/api/leaderboard')) {
-      res.statusCode = 429;
-      res.setHeader('Content-Type', 'application/json');
-      setCorsHeaders(res, req);
-      res.end(JSON.stringify({ error: 'Too many requests. Try again later.' }));
+      sendRateLimited(res, req);
       return;
     }
     readBody(req, res, (body) => {
       try {
         const entry = JSON.parse(body);
         if (!entry.playerName || typeof (entry.totalScore ?? entry.score) !== 'number') {
-          res.statusCode = 400;
-          res.setHeader('Content-Type', 'application/json');
-          setCorsHeaders(res, req);
-          res.end(JSON.stringify({ error: 'playerName and totalScore required' }));
+          sendJson(res, req, 400, { error: 'playerName and totalScore required' });
           return;
         }
         const leaderboard = loadLeaderboard();
@@ -608,14 +639,9 @@ const server = http.createServer((req, res) => {
           date: new Date().toISOString(),
         });
         saveLeaderboard(leaderboard);
-        res.setHeader('Content-Type', 'application/json');
-        setCorsHeaders(res, req);
-        res.end(JSON.stringify({ ok: true }));
+        sendJson(res, req, 200, { ok: true });
       } catch (e) {
-        res.statusCode = 400;
-        res.setHeader('Content-Type', 'application/json');
-        setCorsHeaders(res, req);
-        res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        sendJson(res, req, 400, { error: 'Invalid JSON' });
       }
     });
     return;

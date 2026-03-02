@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';" />
   <title>Operation Blackout — Ransomware Incident Response Game</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -563,30 +563,6 @@
       <button type="button" class="bmail-popup-read-btn" id="bmail-popup-read-btn">Read message</button>
     </div>
 
-    <!-- Chat: fixed lower-right, visible once game started -->
-    <div class="chat-panel" id="chat-panel" hidden>
-      <div class="chat-panel-header">
-        <span class="chat-panel-title">🔒 Dark web — Negotiation</span>
-        <div class="chat-panel-header-actions">
-          <button type="button" class="chat-panel-tracker-btn" id="chat-panel-open-tracker" aria-label="Open payment tracker">📋 Tracker</button>
-          <button type="button" class="chat-panel-toggle" id="chat-panel-toggle" aria-label="Minimize chat">−</button>
-        </div>
-      </div>
-      <div class="chat-panel-body" id="chat-panel-body">
-        <div class="chat-panel-messages" id="chat-panel-messages"></div>
-        <div class="chat-panel-input-wrap">
-          <div class="chat-panel-input-row">
-            <textarea id="chat-panel-input" class="chat-panel-input" rows="2" placeholder="Type your response…" maxlength="500"></textarea>
-            <button type="button" class="chat-panel-send" id="chat-panel-send" aria-label="Send">Send</button>
-          </div>
-          <button type="button" class="chat-suggestions-toggle" id="chat-suggestions-toggle" aria-expanded="false" aria-controls="chat-suggestions-drawer">💡 Suggestions</button>
-        </div>
-        <div class="chat-suggestions-drawer" id="chat-suggestions-drawer" role="region" aria-label="Response suggestions" hidden>
-          <div class="chat-suggestions-content" id="chat-suggestions-content"></div>
-        </div>
-      </div>
-    </div>
-
     <!-- Quiz popup: animated, only during quiz rounds -->
     <div class="quiz-overlay" id="quiz-overlay" hidden aria-hidden="true">
       <div class="quiz-popup" id="quiz-popup">
@@ -638,15 +614,5 @@
 
   <script src="js/data.js"></script>
   <script src="js/game.js"></script>
-  <script>
-    (function () {
-      function updateTime() {
-        const el = document.getElementById('taskbar-time');
-        if (el) el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      }
-      updateTime();
-      setInterval(updateTime, 1000);
-    })();
-  </script>
 </body>
 </html>

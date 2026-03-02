@@ -1,11 +1,8 @@
 /**
  * Game flow: Intro (README only) → Negotiation 1 → Quiz 1 (conditional) → Negotiation 2 → Quiz 2 (conditional) → Negotiation 3 → Results.
- * Chat is always visible lower-right; quiz pops up between negotiation sections.
+ * Negotiation happens in the Tor Browser chat; quiz pops up between negotiation sections.
  * Each option can have operatorReply (attacker's direct response) and nextStepIndex (which step to show next).
  */
-
-/** Ransom demand from README — used by fake wallet and chatbot payment awareness. BTC address, onion address, and personal ID are generated per session in game.js. */
-const RANSOM_BTC_AMOUNT = 2.5;
 
 /** Fake desktop files that appear encrypted until decryptor is run (README, Bmail, Wallet are never affected) */
 const FAKE_DESKTOP_FILES = [
@@ -93,7 +90,6 @@ const NEGOTIATION_PHASE_1 = [
       {
         text: 'We need proof you actually have our data before we discuss payment.',
         score: 95,
-        setsFlag: 'askedStolenData',
         operatorReply: 'We have 2.3 TB of your files. Patient records, HR, billing. We can show you a sample if you engage. Do you want to negotiate?',
         nextStepIndex: 1,
       },
@@ -112,7 +108,6 @@ const NEGOTIATION_PHASE_1 = [
       {
         text: 'Can you prove the decryptor works before we pay?',
         score: 85,
-        setsFlag: 'askedDecryptionProof',
         operatorReply: 'We will send one file decrypted as proof. Our decryptor works. Do you want to negotiate?',
         nextStepIndex: 1,
       },
@@ -124,16 +119,12 @@ const NEGOTIATION_PHASE_1 = [
       {
         text: 'Yes, we want to negotiate. Please send proof of decryption for one file first.',
         score: 95,
-        setsFlag: 'askedDecryptionProof',
-        setsFlag2: 'confirmedNegotiation',
         operatorReply: 'Good. We will send one file decrypted as proof. Our decryptor works. What is your timeline to decide on payment?',
         nextStepIndex: 4,
       },
       {
         text: 'Yes, we are willing to discuss. Send a sample of what you stole so we can verify.',
         score: 90,
-        setsFlag: 'askedStolenData',
-        setsFlag2: 'confirmedNegotiation',
         operatorReply: 'We will send a sample list and one decrypted file. What is your timeline to decide?',
         nextStepIndex: 4,
       },
@@ -157,7 +148,6 @@ const NEGOTIATION_PHASE_1 = [
       {
         text: 'We need 48 hours to involve legal and leadership before we can send payment.',
         score: 80,
-        setsFlag: 'confirmedNegotiation',
         operatorReply: '48 hours. No more. We will send decryptor within 24h of payment. Do not contact law enforcement.',
         nextStepIndex: 4,
       },
@@ -187,7 +177,6 @@ const NEGOTIATION_PHASE_1 = [
       {
         text: 'We have decided to engage. Can we still negotiate?',
         score: 75,
-        setsFlag: 'confirmedNegotiation',
         operatorReply: 'Yes. We have 2.3 TB. We can show you a sample and proof of decryption. Do you want to proceed?',
         nextStepIndex: 1,
       },
@@ -200,7 +189,6 @@ const NEGOTIATION_PHASE_1 = [
       {
         text: 'We need proof of decryption before we will consider payment.',
         score: 85,
-        setsFlag: 'askedDecryptionProof',
         operatorReply: 'We will send one file decrypted as proof. Do you want to negotiate?',
         nextStepIndex: 1,
       },
@@ -218,7 +206,6 @@ const NEGOTIATION_PHASE_1 = [
       {
         text: 'We need 48 hours to involve legal and leadership. We will respond by then.',
         score: 90,
-        setsFlag: 'confirmedNegotiation',
         operatorReply: '48 hours. We will send proof decryption within 12h. Reply when you have decided.',
         nextStepIndex: 5,
       },
@@ -237,7 +224,6 @@ const NEGOTIATION_PHASE_1 = [
       {
         text: 'We are still assessing. We will get back to you.',
         score: 65,
-        setsFlag: 'confirmedNegotiation',
         operatorReply: 'Do not take too long. 72 hours. We will send proof. Reply when ready.',
         nextStepIndex: 5,
       },
@@ -260,21 +246,18 @@ const NEGOTIATION_PHASE_2 = [
       {
         text: 'We need an extension of 72 hours to complete internal approval. Can you extend the deadline?',
         score: 90,
-        setsFlag: 'askedExtension',
         operatorReply: 'We can extend to 72 hours if you show good faith. Reply with your commitment and we will hold.',
         nextStepIndex: 1,
       },
       {
         text: '2.5 BTC is too high. We can do 1.2 BTC. Will you lower the demand?',
         score: 88,
-        setsFlag: 'askedLowerRansom',
         operatorReply: 'We might consider a lower amount if you commit soon. We can do 1.8 BTC if you pay within 72 hours. What do you say?',
         nextStepIndex: 1,
       },
       {
         text: 'We are working on it. Please give us more time.',
         score: 75,
-        setsFlag: 'askedExtension',
         operatorReply: 'How much time? We can give 72 hours if you confirm you are working on payment.',
         nextStepIndex: 1,
       },
@@ -292,8 +275,6 @@ const NEGOTIATION_PHASE_2 = [
       {
         text: 'We commit to working toward a resolution. We request 72 hours and ask if you can reduce to 1.5 BTC.',
         score: 95,
-        setsFlag: 'askedExtension',
-        setsFlag2: 'askedLowerRansom',
         operatorReply: 'We can do 1.8 BTC if you pay within 72 hours. Final offer for this round. Agree or we list you.',
         nextStepIndex: 2,
       },
@@ -306,7 +287,6 @@ const NEGOTIATION_PHASE_2 = [
       {
         text: 'We need 1 week and a 50% reduction.',
         score: 75,
-        setsFlag: 'askedLowerRansom',
         operatorReply: 'One week, 1.8 BTC. Take it or leave it. We list you in 48h if no commitment.',
         nextStepIndex: 2,
       },
@@ -324,14 +304,12 @@ const NEGOTIATION_PHASE_2 = [
       {
         text: 'We accept the 72-hour extension. We will have an answer on 1.8 BTC by then. Thank you.',
         score: 92,
-        setsFlag: 'professionalTone',
         operatorReply: 'Good. 72 hours. Reply when you have decided. Do not stall.',
         nextStepIndex: 3,
       },
       {
         text: '1.8 BTC is still too high. We can do 1 BTC max.',
         score: 85,
-        setsFlag: 'askedLowerRansom',
         operatorReply: '1.5 BTC. Last offer. 72 hours. Take it or we publish.',
         nextStepIndex: 3,
       },
